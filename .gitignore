@@ -2,6 +2,7 @@
 .env
 .venv/
 __pycache__/
+_context/
 *.pyc
 *.pyo
 .DS_Store

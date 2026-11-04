@@ -234,6 +234,11 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
   - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Data size (GB), Write rps P90, Read rps P90.
   - Parsed by `parse_manual()` in `pcu_sizing/importer.py`, with the same defaults as the Excel import (100% hot data, 4 KB reads, 1 KB writes). Data size is entered directly in **GB** (Excel uses `sstable KiB`). Blank rows are ignored; rows missing data size are skipped with a warning.
 - **Output**: results shown **on screen** (Streamlit tables, one tab per variant) and also available as a **downloadable Excel file** (one sheet per variant plus a summary sheet).
+- **Streamlit version pin**: `requirements.txt` pins `streamlit==1.35` (exact). Consequences for `app.py`:
+  - Use `use_container_width=True` on `st.dataframe` / `st.data_editor`. `width="stretch"` is only supported in much newer Streamlit and crashes 1.35 with `TypeError: 'str' object cannot be interpreted as an integer`.
+  - Streamlit 1.35 requires `numpy<2`, but unpinned `pyarrow` resolves to a release needing NumPy 2 (breaks `st.dataframe`), so `requirements.txt` also pins `pyarrow<21`.
+  - If the Streamlit pin is changed again, re-check `app.py` for API compatibility. Headless check: run it with `streamlit.testing.v1.AppTest` (needs the project on `PYTHONPATH`), in both input modes, with `manual_df` preset in `session_state` to exercise the results rendering.
+  - `test_app.py` is a Streamlit diagnostic page for Streamlit Cloud deployment debugging, not a pytest suite.
 - **Optimiser**: **exact search per bucket** (one row per database keeps buckets small enough), with a **heuristic fallback** when a bucket has too many databases for exact search (threshold TBD during implementation).
 - **Phase 1**: Web app with metric import and database→PCU mapping output
 - **Phase 2**: Expand access to the wider IBM team with polished UX
