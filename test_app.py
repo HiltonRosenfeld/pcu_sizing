@@ -32,13 +32,16 @@ from pcu_sizing.catalog import (
     DbDemand,
     bucket_databases,
 )
+import pcu_sizing.engine as engine
 from pcu_sizing.engine import (
-    EXACT_THRESHOLD,
     PcuGroup,
     all_partitions,
     optimise_bucket,
     run_all_variants,
 )
+
+# Set default EXACT_THRESHOLD to 1 in test_app
+engine.EXACT_THRESHOLD = 1
 from pcu_sizing.exporter import build_excel
 from pcu_sizing.importer import parse_excel, parse_manual
 
@@ -97,17 +100,17 @@ with st.expander("🔍 2. Automated Static Checks (Network, Loops, Deprecations)
     })
 
     # Check 3: Partition Complexity Ceiling
-    if EXACT_THRESHOLD > 9:
+    if engine.EXACT_THRESHOLD > 9:
         checks.append({
             "Check": "Exact Partition Threshold",
             "Status": "⚠️ High Risk",
-            "Details": f"EXACT_THRESHOLD is {EXACT_THRESHOLD}. Bell({EXACT_THRESHOLD}) = 4.2M partitions which will trigger OOM on Streamlit Cloud (1GB limit). Recommended: <= 8 or 9.",
+            "Details": f"EXACT_THRESHOLD is {engine.EXACT_THRESHOLD}. Bell({engine.EXACT_THRESHOLD}) = 4.2M partitions which will trigger OOM on Streamlit Cloud (1GB limit). Recommended: <= 8 or 9.",
         })
     else:
         checks.append({
             "Check": "Exact Partition Threshold",
             "Status": "✅ Safe",
-            "Details": f"EXACT_THRESHOLD is {EXACT_THRESHOLD} (Bell={len(all_partitions(list(range(EXACT_THRESHOLD))))}).",
+            "Details": f"EXACT_THRESHOLD is {engine.EXACT_THRESHOLD} (Bell={len(all_partitions(list(range(engine.EXACT_THRESHOLD))))}).",
         })
 
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
@@ -213,6 +216,14 @@ if enable_import and databases:
 
 if enable_optimise and databases:
     st.markdown("### Step 2: Optimisation Engine")
+    exact_thresh = st.number_input(
+        "EXACT_THRESHOLD (switch from exact to greedy when bucket > N)",
+        min_value=1,
+        max_value=12,
+        value=1,
+        help="Default set to 1 to force greedy optimization during debug.",
+    )
+    engine.EXACT_THRESHOLD = int(exact_thresh)
     t0 = time.perf_counter()
     buckets = bucket_databases(databases)
     bucket_summary = [{"Bucket": str(k), "Count": len(v)} for k, v in buckets.items()]
