@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from pcu_sizing.catalog import bucket_databases, HOURS_PER_MONTH
+import pcu_sizing.engine as engine
 from pcu_sizing.engine import PcuGroup, run_all_variants, VARIANTS
 from pcu_sizing.importer import parse_excel, parse_manual, MANUAL_COLUMNS
 from pcu_sizing.exporter import build_excel
@@ -74,6 +75,20 @@ The tool will show four mapping variants side by side.
         {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "RCU $/hr": 19.74, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
     ]
     st.dataframe(pd.DataFrame(catalog_data), hide_index=True, use_container_width=True)
+
+    st.header("Optimization Settings")
+    exact_threshold = st.number_input(
+        "Exact search threshold (bucket size)",
+        min_value=1,
+        max_value=12,
+        value=engine.EXACT_THRESHOLD,
+        help=(
+            "Maximum number of databases in a single bucket to evaluate with exact "
+            "partition search (lowest cost guarantee). Buckets with more databases than "
+            "this use fast greedy heuristic optimization to prevent out-of-memory crashes."
+        ),
+    )
+    engine.EXACT_THRESHOLD = int(exact_threshold)
 
 
 # ---------------------------------------------------------------------------
@@ -212,11 +227,12 @@ with st.expander("📋 Input data preview"):
 buckets = bucket_databases(databases)
 
 @st.cache_data(show_spinner="Computing PCU mappings…")
-def compute_variants(db_key: str):
+def compute_variants(db_key: str, exact_threshold: int):
+    engine.EXACT_THRESHOLD = exact_threshold
     return run_all_variants(buckets)
 
 
-variant_results = compute_variants(cache_key)
+variant_results = compute_variants(cache_key, exact_threshold)
 
 
 # ---------------------------------------------------------------------------

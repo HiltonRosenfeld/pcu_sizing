@@ -29,7 +29,7 @@ from .catalog import (
     get_pcu_type,
 )
 
-EXACT_THRESHOLD = 12  # exact partition search up to this many databases per bucket
+EXACT_THRESHOLD = 8  # exact partition search up to this many databases per bucket
 
 # ---------------------------------------------------------------------------
 # Data structures

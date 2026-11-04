@@ -40,8 +40,8 @@ from pcu_sizing.engine import (
     run_all_variants,
 )
 
-# Set default EXACT_THRESHOLD to 1 in test_app
-engine.EXACT_THRESHOLD = 4
+# Set default EXACT_THRESHOLD to 8 in test_app
+engine.EXACT_THRESHOLD = 8
 from pcu_sizing.exporter import build_excel
 from pcu_sizing.importer import parse_excel, parse_manual
 
@@ -270,8 +270,8 @@ if enable_optimise and databases:
         "EXACT_THRESHOLD (switch from exact to greedy when bucket > N)",
         min_value=1,
         max_value=12,
-        value=1,
-        help="Default set to 1 to force greedy optimization during debug.",
+        value=8,
+        help="Default set to 8. Switch from exact to greedy when bucket > N.",
     )
     engine.EXACT_THRESHOLD = int(exact_thresh)
     t0 = time.perf_counter()
