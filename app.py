@@ -74,7 +74,7 @@ The tool will show four mapping variants side by side.
         {"Type": "Cache Optimized",    "Tenancy": "Shared",    "RCU $/hr": 14.03, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
         {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "RCU $/hr": 19.74, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
     ]
-    st.dataframe(pd.DataFrame(catalog_data), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(catalog_data), hide_index=True, width="stretch")
 
     st.header("Optimization Settings")
     exact_threshold = st.number_input(
@@ -150,7 +150,7 @@ else:
             _empty_entry_table(),
             num_rows="dynamic",
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Database": st.column_config.TextColumn("Database"),
                 "Region": st.column_config.TextColumn("Region"),
@@ -217,7 +217,7 @@ with st.expander("📋 Input data preview"):
             "Writes P90": db.writes_p90,
             "TPS demand": round(db.tps, 1),
         })
-    st.dataframe(pd.DataFrame(input_rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(input_rows), hide_index=True, width="stretch")
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +328,7 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
             .map(_util_style, subset=["Cache util", "TPS util"])
         )
 
-        st.dataframe(styled, hide_index=True, use_container_width=True)
+        st.dataframe(styled, hide_index=True, width="stretch")
 
         # Per-group expandable detail
         with st.expander("Group details"):
@@ -347,7 +347,7 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
                         "Cache (GB)": round(db.cache_gb, 4),
                         "TPS demand": round(db.tps, 1),
                     })
-                st.dataframe(pd.DataFrame(detail_rows), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame(detail_rows), hide_index=True, width="stretch")
 
                 cap_cache = g.pcu_count * g.pcu_type.cache_gb
                 cap_tps = g.pcu_count * g.tps_ceiling_per_pcu
@@ -386,7 +386,7 @@ if excluded_groups:
                 "TPS demand": round(db.tps, 1),
                 "PCU Type attempted": g.pcu_type.name,
             })
-    st.dataframe(pd.DataFrame(excluded_rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(excluded_rows), hide_index=True, width="stretch")
 else:
     st.success("✅ All databases fit within PCU group limits.")
 
