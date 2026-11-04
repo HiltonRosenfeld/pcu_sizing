@@ -41,7 +41,7 @@ from pcu_sizing.engine import (
 )
 
 # Set default EXACT_THRESHOLD to 1 in test_app
-engine.EXACT_THRESHOLD = 1
+engine.EXACT_THRESHOLD = 4
 from pcu_sizing.exporter import build_excel
 from pcu_sizing.importer import parse_excel, parse_manual
 
@@ -54,6 +54,46 @@ st.set_page_config(
 st.title("🧪 PCU Sizing — Diagnostic & Debug App")
 st.caption("Use this stripped-down app to diagnose issues on Streamlit Cloud.")
 
+# ------------------------------------------------------------------------------
+# Robust Fallback Renderers (Zero JS-Chunk Dependencies)
+# ------------------------------------------------------------------------------
+def render_card(target, label: str, value: str, delta: str = ""):
+    """Render metric cards using pure HTML/CSS without relying on st.metric JS chunks."""
+    delta_html = f'<div style="font-size: 12px; color: #4b5563; margin-top: 4px;">{delta}</div>' if delta else ""
+    target.markdown(
+        f"""
+        <div style="background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;">
+            <div style="font-size: 13px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">{label}</div>
+            <div style="font-size: 22px; color: #0f172a; font-weight: 700; margin-top: 2px;">{value}</div>
+            {delta_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def render_table_fallback(df: pd.DataFrame, use_native: bool = False):
+    """Renders table using standard static HTML when native st.dataframe fails to load."""
+    if use_native:
+        try:
+            st.dataframe(df, hide_index=True, use_container_width=True)
+            return
+        except Exception:
+            pass
+    # Static HTML fallback (guaranteed to render with 0 dynamic module scripts)
+    st.markdown(
+        df.to_html(index=False, classes="table", border=0),
+        unsafe_allow_html=True,
+    )
+
+ui_mode = st.radio(
+    "UI Component Engine",
+    ["Robust Fallback (Static HTML / No JS chunk dependencies)", "Native Streamlit (st.metric & st.dataframe)"],
+    index=0,
+    horizontal=True,
+    help="Select 'Robust Fallback' if browser blocks or fails to fetch Streamlit's dynamic JS module chunks.",
+)
+use_native_ui = (ui_mode == "Native Streamlit (st.metric & st.dataframe)")
+
 # ==============================================================================
 # SECTION 1: System & Environment Diagnostics
 # ==============================================================================
@@ -62,16 +102,21 @@ with st.expander("📊 1. System & Runtime Environment", expanded=True):
 
     # Memory usage
     usage = resource.getrusage(resource.RUSAGE_SELF)
-    # on macOS ru_maxrss is bytes, on Linux it is kilobytes
     if platform.system() == "Darwin":
         max_rss_mb = usage.ru_maxrss / (1024 * 1024)
     else:
         max_rss_mb = usage.ru_maxrss / 1024
 
-    col1.metric("Python Version", platform.python_version())
-    col2.metric("Streamlit Version", st.__version__)
-    col3.metric("OS Platform", platform.system())
-    col4.metric("Current Max RSS", f"{max_rss_mb:.1f} MB")
+    if use_native_ui:
+        col1.metric("Python Version", platform.python_version())
+        col2.metric("Streamlit Version", st.__version__)
+        col3.metric("OS Platform", platform.system())
+        col4.metric("Current Max RSS", f"{max_rss_mb:.1f} MB")
+    else:
+        render_card(col1, "Python Version", platform.python_version())
+        render_card(col2, "Streamlit Version", st.__version__)
+        render_card(col3, "OS Platform", platform.system())
+        render_card(col4, "Current Max RSS", f"{max_rss_mb:.1f} MB")
 
     st.write({
         "Executable": sys.executable,
@@ -113,7 +158,7 @@ with st.expander("🔍 2. Automated Static Checks (Network, Loops, Deprecations)
             "Details": f"EXACT_THRESHOLD is {engine.EXACT_THRESHOLD} (Bell={len(all_partitions(list(range(engine.EXACT_THRESHOLD))))}).",
         })
 
-    st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
+    render_table_fallback(pd.DataFrame(checks), use_native=use_native_ui)
 
 # ==============================================================================
 # SECTION 3: Partition Memory & CPU Benchmark
@@ -135,9 +180,14 @@ with st.expander("⚡ 3. Partition Memory & Latency Stress Test", expanded=False
         tracemalloc.stop()
 
         b1, b2, b3 = st.columns(3)
-        b1.metric("Partition Count", f"{len(partitions):,}")
-        b2.metric("Elapsed Time", f"{elapsed * 1000:.2f} ms")
-        b3.metric("Peak Memory Allocated", f"{peak_mem / (1024 * 1024):.2f} MB")
+        if use_native_ui:
+            b1.metric("Partition Count", f"{len(partitions):,}")
+            b2.metric("Elapsed Time", f"{elapsed * 1000:.2f} ms")
+            b3.metric("Peak Memory Allocated", f"{peak_mem / (1024 * 1024):.2f} MB")
+        else:
+            render_card(b1, "Partition Count", f"{len(partitions):,}")
+            render_card(b2, "Elapsed Time", f"{elapsed * 1000:.2f} ms")
+            render_card(b3, "Peak Memory Allocated", f"{peak_mem / (1024 * 1024):.2f} MB")
 
         if peak_mem / (1024 * 1024) > 100 or elapsed > 5:
             st.warning("⚠️ High resource consumption! A bucket of this size risks hitting Streamlit Cloud limits.")
@@ -212,7 +262,7 @@ if enable_import and databases:
             }
             for db in databases
         ]
-        st.dataframe(pd.DataFrame(preview_data), width="stretch")
+        render_table_fallback(pd.DataFrame(preview_data), use_native=use_native_ui)
 
 if enable_optimise and databases:
     st.markdown("### Step 2: Optimisation Engine")
@@ -237,7 +287,12 @@ if enable_optimise and databases:
         st.markdown("### Step 3: UI Rendering")
         summary_cols = st.columns(len(results))
         for col, (var_name, groups) in zip(summary_cols, results.items()):
-            col.metric(var_name, f"${sum(g.monthly_cost for g in groups):,.0f}/mo", f"{len(groups)} groups")
+            val_str = f"${sum(g.monthly_cost for g in groups):,.0f}/mo"
+            delta_str = f"{len(groups)} groups"
+            if use_native_ui:
+                col.metric(var_name, val_str, delta_str)
+            else:
+                render_card(col, var_name, val_str, delta_str)
 
     if enable_export:
         st.markdown("### Step 4: Excel Export")
