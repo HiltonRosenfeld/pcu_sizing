@@ -110,7 +110,7 @@ with st.expander("🔍 2. Automated Static Checks (Network, Loops, Deprecations)
             "Details": f"EXACT_THRESHOLD is {EXACT_THRESHOLD} (Bell={len(all_partitions(list(range(EXACT_THRESHOLD))))}).",
         })
 
-    st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
 
 # ==============================================================================
 # SECTION 3: Partition Memory & CPU Benchmark
@@ -209,7 +209,7 @@ if enable_import and databases:
             }
             for db in databases
         ]
-        st.dataframe(pd.DataFrame(preview_data), use_container_width=True)
+        st.dataframe(pd.DataFrame(preview_data), width="stretch")
 
 if enable_optimise and databases:
     st.markdown("### Step 2: Optimisation Engine")
