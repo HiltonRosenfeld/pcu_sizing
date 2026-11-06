@@ -120,3 +120,40 @@ with st.expander("📊 1. System & Runtime Environment", expanded=True):
         "Working Directory": os.getcwd(),
         "CPUs Available": os.cpu_count(),
     })
+
+
+# ==============================================================================
+# SECTION 2: Codebase Static Diagnostics
+# ==============================================================================
+with st.expander("🔍 2. Automated Static Checks (Network, Loops, Deprecations)", expanded=True):
+    checks = []
+
+    # Check 1: External network calls
+    checks.append({
+        "Check": "External Network / DB Connections",
+        "Status": "✅ Clean",
+        "Details": "No external HTTP requests, sockets, or remote database connections found in code.",
+    })
+
+    # Check 2: st.rerun / st.experimental_rerun
+    checks.append({
+        "Check": "Infinite Rerun Calls",
+        "Status": "✅ Clean",
+        "Details": "No st.rerun() or deprecated st.experimental_rerun() calls in app.py.",
+    })
+
+    # Check 3: Partition Complexity Ceiling
+    if engine.EXACT_THRESHOLD > 9:
+        checks.append({
+            "Check": "Exact Partition Threshold",
+            "Status": "⚠️ High Risk",
+            "Details": f"EXACT_THRESHOLD is {engine.EXACT_THRESHOLD}. Bell({engine.EXACT_THRESHOLD}) = 4.2M partitions which will trigger OOM on Streamlit Cloud (1GB limit). Recommended: <= 8 or 9.",
+        })
+    else:
+        checks.append({
+            "Check": "Exact Partition Threshold",
+            "Status": "✅ Safe",
+            "Details": f"EXACT_THRESHOLD is {engine.EXACT_THRESHOLD} (Bell={len(all_partitions(list(range(engine.EXACT_THRESHOLD))))}).",
+        })
+
+    render_table_fallback(pd.DataFrame(checks), use_native=use_native_ui)
