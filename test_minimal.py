@@ -157,3 +157,39 @@ with st.expander("🔍 2. Automated Static Checks (Network, Loops, Deprecations)
         })
 
     render_table_fallback(pd.DataFrame(checks), use_native=use_native_ui)
+
+
+    # ==============================================================================
+# SECTION 3: Partition Memory & CPU Benchmark
+# ==============================================================================
+with st.expander("⚡ 3. Partition Memory & Latency Stress Test", expanded=False):
+    st.write(
+        "Test how much memory and time `all_partitions()` consumes for varying bucket sizes $N$."
+    )
+    test_n = st.slider("Select Database Bucket Size (N)", min_value=1, max_value=11, value=7)
+
+    if st.button(f"Run Benchmark for N = {test_n}"):
+        tracemalloc.start()
+        start_time = time.perf_counter()
+
+        dummy_items = list(range(test_n))
+        partitions = all_partitions(dummy_items)
+        elapsed = time.perf_counter() - start_time
+        current_mem, peak_mem = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        b1, b2, b3 = st.columns(3)
+        if use_native_ui:
+            b1.metric("Partition Count", f"{len(partitions):,}")
+            b2.metric("Elapsed Time", f"{elapsed * 1000:.2f} ms")
+            b3.metric("Peak Memory Allocated", f"{peak_mem / (1024 * 1024):.2f} MB")
+        else:
+            render_card(b1, "Partition Count", f"{len(partitions):,}")
+            render_card(b2, "Elapsed Time", f"{elapsed * 1000:.2f} ms")
+            render_card(b3, "Peak Memory Allocated", f"{peak_mem / (1024 * 1024):.2f} MB")
+
+        if peak_mem / (1024 * 1024) > 100 or elapsed > 5:
+            st.warning("⚠️ High resource consumption! A bucket of this size risks hitting Streamlit Cloud limits.")
+        else:
+            st.success("✅ Execution within safe limits.")
+
