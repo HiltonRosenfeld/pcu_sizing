@@ -2,7 +2,7 @@
 Excel import — parses the on-demand metrics Excel export into DbDemand objects.
 
 Expected columns (case-insensitive matching):
-  - database name / keyspace / db_id  (any column whose header contains these words)
+  - database name                      → db_id (required)
   - sstable KiB                        → total_data_gb
   - write rps P90 / 7d                 → writes_p90
   - read rps P90 / 7d                  → reads_p90
@@ -66,7 +66,15 @@ def parse_excel(file: Union[str, io.BytesIO]) -> tuple[list[DbDemand], list[str]
         (databases, warnings)  where databases is a list of DbDemand objects
         and warnings is a list of human-readable warning strings.
     """
-    df = pd.read_excel(file, engine="openpyxl")
+    return _parse_dataframe(pd.read_excel(file, engine="openpyxl"))
+
+
+def parse_csv(file: Union[str, io.BytesIO]) -> tuple[list[DbDemand], list[str]]:
+    """Parse the on-demand metrics CSV file (same columns as the Excel export)."""
+    return _parse_dataframe(pd.read_csv(file, encoding="utf-8-sig", sep=None, engine="python"))
+
+
+def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
     warnings: list[str] = []
 
     # --- Locate columns ---
@@ -76,13 +84,7 @@ def parse_excel(file: Union[str, io.BytesIO]) -> tuple[list[DbDemand], list[str]
     col_region    = _find_col(df, "region")
     col_engine    = _find_col(df, "engine type", "engine_type", "engine")
 
-    # Database identifier — try common column names
-    col_db = _try_find_col(df, "database name", "db name", "database", "keyspace", "db_id", "name")
-    if col_db is None:
-        # Use row index as fallback
-        df["_db_id"] = [f"db_{i+1}" for i in range(len(df))]
-        col_db = "_db_id"
-        warnings.append("No database name column found; using row numbers as identifiers.")
+    col_db = _find_col(df, "database name")
 
     # Optional tenancy column
     col_tenancy = _try_find_col(df, "tenancy", "dedicated")
@@ -90,7 +92,10 @@ def parse_excel(file: Union[str, io.BytesIO]) -> tuple[list[DbDemand], list[str]
     databases: list[DbDemand] = []
 
     for idx, row in df.iterrows():
-        db_id = str(row[col_db]).strip() if pd.notna(row[col_db]) else f"db_{idx+1}"
+        if pd.isna(row[col_db]) or not str(row[col_db]).strip():
+            warnings.append(f"Row {idx+1}: missing database name — skipped.")
+            continue
+        db_id = str(row[col_db]).strip()
 
         try:
             sstable_kib = float(row[col_sstable])
@@ -168,7 +173,10 @@ def parse_manual(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
             continue
 
         name = row.get("Database")
-        db_id = str(name).strip() if pd.notna(name) and str(name).strip() else f"db_{idx+1}"
+        if pd.isna(name) or not str(name).strip():
+            warnings.append(f"Row {idx+1}: missing database name — skipped.")
+            continue
+        db_id = str(name).strip()
 
         data_gb = _num(row.get("Data size (GB)"))
         if data_gb is None:

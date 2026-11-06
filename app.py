@@ -13,9 +13,8 @@ import pandas as pd
 import streamlit as st
 
 from pcu_sizing.catalog import bucket_databases, HOURS_PER_MONTH
-import pcu_sizing.engine as engine
 from pcu_sizing.engine import PcuGroup, run_all_variants, VARIANTS
-from pcu_sizing.importer import parse_excel, parse_manual, MANUAL_COLUMNS
+from pcu_sizing.importer import parse_excel, parse_csv, parse_manual, MANUAL_COLUMNS
 from pcu_sizing.exporter import build_excel
 
 # ---------------------------------------------------------------------------
@@ -42,12 +41,13 @@ with st.sidebar:
 [PCU Groups](https://docs.datastax.com/en/astra-db-serverless/administration/provisioned-capacity-units.html)
 at the lowest reserved (RCU) cost.
 
-**Upload** an Excel export of your on-demand metrics, or **enter data on screen**
+**Upload** an Excel or CSV export of your on-demand metrics, or **enter data on screen**
 for small data sets.
 The tool will show four mapping variants side by side.
 
 ---
-**Required Excel columns**
+**Required columns** (Excel or CSV)
+- `Database name`
 - `sstable KiB` — total data size (unreplicated, compressed)
 - `write rps P90 / 7d` — write throughput at P90
 - `read rps P90 / 7d` — read throughput at P90
@@ -55,7 +55,6 @@ The tool will show four mapping variants side by side.
 - `engine type` — `cassandra-vector` for vector, anything else for non-vector
 
 **Optional columns**
-- Database name / keyspace / database
 - `tenancy` — `dedicated` for dedicated tenancy (default: shared)
 
 ---
@@ -76,19 +75,6 @@ The tool will show four mapping variants side by side.
     ]
     st.dataframe(pd.DataFrame(catalog_data), hide_index=True, width="stretch")
 
-    st.header("Optimization Settings")
-    exact_threshold = st.number_input(
-        "Exact search threshold (bucket size)",
-        min_value=1,
-        max_value=12,
-        value=engine.EXACT_THRESHOLD,
-        help=(
-            "Maximum number of databases in a single bucket to evaluate with exact "
-            "partition search (lowest cost guarantee). Buckets with more databases than "
-            "this use fast greedy heuristic optimization to prevent out-of-memory crashes."
-        ),
-    )
-    engine.EXACT_THRESHOLD = int(exact_threshold)
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +83,8 @@ The tool will show four mapping variants side by side.
 
 @st.cache_data(show_spinner="Parsing file…")
 def load_databases(file_bytes: bytes, file_name: str):
+    if file_name.lower().endswith(".csv"):
+        return parse_csv(io.BytesIO(file_bytes))
     return parse_excel(io.BytesIO(file_bytes))
 
 
@@ -114,19 +102,19 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
 
 input_mode = st.radio(
     "Data input",
-    ["Upload Excel file", "Enter data on screen"],
+    ["Upload Excel/CSV file", "Enter data on screen"],
     horizontal=True,
 )
 
-if input_mode == "Upload Excel file":
+if input_mode == "Upload Excel/CSV file":
     uploaded_file = st.file_uploader(
-        "Upload on-demand metrics Excel file",
-        type=["xlsx", "xls"],
-        help="Excel export of on-demand Astra DB metrics.",
+        "Upload on-demand metrics Excel or CSV file",
+        type=["xlsx", "xls", "csv"],
+        help="Excel or CSV export of on-demand Astra DB metrics.",
     )
 
     if uploaded_file is None:
-        st.info("Upload an Excel file above to begin.")
+        st.info("Upload an Excel or CSV file above to begin.")
         st.stop()
 
     try:
@@ -152,7 +140,7 @@ else:
             hide_index=True,
             width="stretch",
             column_config={
-                "Database": st.column_config.TextColumn("Database"),
+                "Database": st.column_config.TextColumn("Database name", required=True),
                 "Region": st.column_config.TextColumn("Region"),
                 "Engine": st.column_config.SelectboxColumn(
                     "Engine", options=["Non-vector", "Vector"],
@@ -227,12 +215,11 @@ with st.expander("📋 Input data preview"):
 buckets = bucket_databases(databases)
 
 @st.cache_data(show_spinner="Computing PCU mappings…")
-def compute_variants(db_key: str, exact_threshold: int):
-    engine.EXACT_THRESHOLD = exact_threshold
+def compute_variants(db_key: str):
     return run_all_variants(buckets)
 
 
-variant_results = compute_variants(cache_key, exact_threshold)
+variant_results = compute_variants(cache_key)
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +278,9 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
                 "PCU Type": f"{g.pcu_type.name} ({g.pcu_type.tenancy.capitalize()})",
                 "PCUs": g.pcu_count,
                 "Databases": ", ".join(g.db_ids),
-                "Cache (GB)": f"{g.total_cache_gb:.1f} / {g.pcu_count * g.pcu_type.cache_gb:.0f}",
+                "Cache (GB) (used / available)": f"{g.total_cache_gb:.1f} / {g.pcu_count * g.pcu_type.cache_gb:.0f}",
                 "Cache util": g.cache_utilisation,
-                "TPS": f"{g.total_tps:,.0f} / {g.pcu_count * g.tps_ceiling_per_pcu:,}",
+                "TPS (used / available)": f"{g.total_tps:,.0f} / {g.pcu_count * g.tps_ceiling_per_pcu:,}",
                 "TPS util": g.tps_utilisation,
                 "$/hr": g.hourly_cost,
                 "$/mo": g.monthly_cost,
