@@ -193,3 +193,117 @@ with st.expander("⚡ 3. Partition Memory & Latency Stress Test", expanded=False
         else:
             st.success("✅ Execution within safe limits.")
 
+
+
+# ==============================================================================
+# SECTION 4: Modular Step-by-Step Test Harness
+# ==============================================================================
+st.subheader("🛠️ Step-by-Step Pipeline Test")
+st.caption("Toggle individual steps to isolate any failure or crash.")
+
+col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+enable_import = col_t1.checkbox("1. Test Import", value=True)
+enable_optimise = col_t2.checkbox("2. Test Engine Calculation", value=True)
+enable_render = col_t3.checkbox("3. Test UI Rendering", value=True)
+enable_export = col_t4.checkbox("4. Test Excel Export", value=True)
+
+# Input data generation
+sample_mode = st.radio(
+    "Data Source",
+    ["Synthetic Test Workload (Instant)", "Upload Real Excel File"],
+    horizontal=True,
+)
+
+databases: list[DbDemand] = []
+warnings: list[str] = []
+
+if sample_mode == "Synthetic Test Workload (Instant)":
+    num_dbs = st.slider("Number of synthetic databases", min_value=1, max_value=30, value=6)
+    for i in range(1, num_dbs + 1):
+        databases.append(
+            DbDemand(
+                db_id=f"test_db_{i}",
+                region="us-east-1",
+                engine_type="cassandra-vector" if i % 4 == 0 else "",
+                tenancy="shared",
+                total_data_gb=float(i * 50),
+                hot_data_pct=1.0,
+                reads_p90=float(i * 200),
+                avg_read_kb=4.0,
+                writes_p90=float(i * 100),
+                avg_write_kb=1.0,
+            )
+        )
+    st.info(f"Generated {len(databases)} synthetic databases in memory.")
+
+else:
+    uploaded = st.file_uploader("Upload test Excel file", type=["xlsx", "xls"])
+    if uploaded is not None:
+        try:
+            databases, warnings = parse_excel(io.BytesIO(uploaded.read()))
+            st.success(f"Parsed {len(databases)} databases from uploaded file.")
+        except Exception as e:
+            st.error(f"Import failed: {e}")
+            st.stop()
+    else:
+        st.info("Upload a file or switch to synthetic mode.")
+        st.stop()
+
+# Execution Pipeline with timing
+if enable_import and databases:
+    with st.expander("📋 Loaded Databases Preview", expanded=False):
+        preview_data = [
+            {
+                "ID": db.db_id,
+                "Region": db.region,
+                "Vector": db.is_vector,
+                "Tenancy": db.tenancy,
+                "Data (GB)": db.total_data_gb,
+                "TPS": round(db.tps, 1),
+            }
+            for db in databases
+        ]
+        render_table_fallback(pd.DataFrame(preview_data), use_native=use_native_ui)
+
+if enable_optimise and databases:
+    st.markdown("### Step 2: Optimisation Engine")
+    exact_thresh = st.number_input(
+        "EXACT_THRESHOLD (switch from exact to greedy when bucket > N)",
+        min_value=1,
+        max_value=12,
+        value=8,
+        help="Default set to 8. Switch from exact to greedy when bucket > N.",
+    )
+    engine.EXACT_THRESHOLD = int(exact_thresh)
+    t0 = time.perf_counter()
+    buckets = bucket_databases(databases)
+    bucket_summary = [{"Bucket": str(k), "Count": len(v)} for k, v in buckets.items()]
+    st.write("Buckets:", bucket_summary)
+
+    results = run_all_variants(buckets)
+    calc_time = (time.perf_counter() - t0) * 1000
+    st.success(f"✅ Calculation complete in **{calc_time:.2f} ms**.")
+
+    if enable_render:
+        st.markdown("### Step 3: UI Rendering")
+        summary_cols = st.columns(len(results))
+        for col, (var_name, groups) in zip(summary_cols, results.items()):
+            val_str = f"${sum(g.monthly_cost for g in groups):,.0f}/mo"
+            delta_str = f"{len(groups)} groups"
+            if use_native_ui:
+                col.metric(var_name, val_str, delta_str)
+            else:
+                render_card(col, var_name, val_str, delta_str)
+
+    if enable_export:
+        st.markdown("### Step 4: Excel Export")
+        t_exp = time.perf_counter()
+        excel_data = build_excel(results)
+        exp_time = (time.perf_counter() - t_exp) * 1000
+        st.success(f"✅ Excel generated in **{exp_time:.2f} ms** ({len(excel_data):,} bytes).")
+        st.download_button(
+            "⬇️ Download Test Excel",
+            data=excel_data,
+            file_name="test_pcu_sizing.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
