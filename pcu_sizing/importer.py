@@ -8,6 +8,8 @@ Expected columns (case-insensitive matching):
   - read rps P90 / 7d                  → reads_p90
   - region                             → region
   - engine type                        → engine_type ("cassandra-vector" = vector)
+  - environment (optional)             → environment ("prod"/"production" = production,
+                                          anything else/missing = non-production)
 
 Defaults applied:
   - hot_data_pct = 1.0 (100%)
@@ -88,6 +90,8 @@ def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
 
     # Optional tenancy column
     col_tenancy = _try_find_col(df, "tenancy", "dedicated")
+    # Optional environment column
+    col_env = _try_find_col(df, "environment")
 
     databases: list[DbDemand] = []
 
@@ -126,11 +130,16 @@ def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
         else:
             tenancy = "shared"
 
+        environment = ""
+        if col_env and pd.notna(row[col_env]):
+            environment = str(row[col_env]).strip()
+
         databases.append(DbDemand(
             db_id=db_id,
             region=region,
             engine_type=engine_type,
             tenancy=tenancy,
+            environment=environment,
             total_data_gb=total_data_gb,
             hot_data_pct=1.0,
             reads_p90=reads_p90,
@@ -150,7 +159,7 @@ def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
 # ---------------------------------------------------------------------------
 
 MANUAL_COLUMNS = [
-    "Database", "Region", "Engine", "Tenancy",
+    "Database", "Region", "Engine", "Tenancy", "Environment",
     "Data size (GB)", "Write rps P90", "Read rps P90",
 ]
 
@@ -187,12 +196,15 @@ def parse_manual(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
         region = str(region).strip() if pd.notna(region) and str(region).strip() else "unknown"
         engine = str(row.get("Engine") or "").strip().lower()
         tenancy = str(row.get("Tenancy") or "").strip().lower()
+        environment = row.get("Environment")
+        environment = str(environment).strip() if pd.notna(environment) else ""
 
         databases.append(DbDemand(
             db_id=db_id,
             region=region,
             engine_type="cassandra-vector" if engine == "vector" else "",
             tenancy="dedicated" if tenancy == "dedicated" else "shared",
+            environment=environment,
             total_data_gb=data_gb,
             hot_data_pct=1.0,
             reads_p90=_num(row.get("Read rps P90")) or 0.0,

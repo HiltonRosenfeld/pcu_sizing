@@ -99,6 +99,7 @@ The on-demand metrics arrive as an Excel sheet. Calculator inputs map to its col
 | Region (for grouping) | Excel | `region` column |
 | Database type (for grouping) | Excel | `engine type` column; value `cassandra-vector` = Serverless (vector), anything else = Serverless (non-vector) |
 | Tenancy | Default | Shared (per-database Dedicated flag) |
+| Environment (for grouping) | Excel/CSV (optional) | `environment` column; `prod` or `production` (case-insensitive) = production, anything else or missing = non-production |
 
 Notes:
 - Reads/writes per second are the **P90 over 7 days** (not a true mean). **P90 is used directly for the TPS calculation** — there is no peak multiplier and P100 values are not used (changed from the earlier `avg × multiplier` / P100 approach).
@@ -145,6 +146,7 @@ Databases may only share a group if they match on **all** of:
 1. **Deployment type**: Serverless (vector) vs non-vector (`engine type`) — never mixed.
 2. **Region** (`region` column) — PCU groups are region-specific.
 3. **Tenancy**: Shared (default) or Dedicated.
+4. **Environment**: production (`prod` / `production`) vs non-production (everything else, including blank) — production databases get their own PCU groups. E.g. a `prod` and a `non-prod` database in region `abc` are always in two distinct groups.
 
 Within a group, **one PCU type only**.
 
@@ -232,9 +234,9 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
 - **Stack**: **Python** web app built with **Streamlit**. Not Node/React.
 - **Input**: Excel **or CSV** upload of on-demand metrics, **or** optional on-screen entry for small data sets (radio at top of the app switches mode; no sample-data option).
   - File type is chosen by extension in `load_databases()` (`app.py`): `.csv` → `parse_csv()`, otherwise `parse_excel()`. Both feed the shared `_parse_dataframe()` in `pcu_sizing/importer.py`, so CSV needs the same columns and gets the same validation. `parse_csv()` auto-detects the delimiter and tolerates a UTF-8 BOM.
-  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Data size (GB), Write rps P90, Read rps P90.
+  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Environment (free text; `prod`/`production` = production), Data size (GB), Write rps P90, Read rps P90.
   - Parsed by `parse_manual()` in `pcu_sizing/importer.py`, with the same defaults as the Excel import (100% hot data, 4 KB reads, 1 KB writes). Data size is entered directly in **GB** (Excel uses `sstable KiB`). Blank rows are ignored; rows missing data size are skipped with a warning.
-- **Output**: results shown **on screen** (Streamlit tables, one tab per variant) and also available as a **downloadable Excel file** (one sheet per variant plus a summary sheet).
+- **Output**: results shown **on screen** (Streamlit tables, one tab per variant) and also available as a **downloadable Excel file** (one sheet per variant plus a summary sheet). Group tables (on screen and Excel) include an `Environment` column (Production / Non-production).
   - In the on-screen group summary table, the `Cache (GB)` and `TPS` columns are headed `... (used / available)` to explain the `used / available` cell format. The Excel report keeps its own headings (`Total Cache (GB)`, `Total TPS`).
 - **Streamlit version**: `requirements.txt` uses `streamlit>=1.50,<2` (tested on 1.50.0 and 1.66.1; 1.66 needs Python ≥ 3.11, relevant for Streamlit Cloud). Notes for `app.py`:
   - Use `width="stretch"` on `st.dataframe` / `st.data_editor`. `use_container_width` is deprecated (its stated removal date, 2025-12-31, has passed). `width="stretch"` needs a recent Streamlit and crashes old ones (e.g. 1.35: `TypeError: 'str' object cannot be interpreted as an integer`).

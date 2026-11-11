@@ -56,6 +56,9 @@ The tool will show four mapping variants side by side.
 
 **Optional columns**
 - `tenancy` — `dedicated` for dedicated tenancy (default: shared)
+- `environment` — `prod` or `production` for production databases; any other value
+  (or blank) is non-production. Production and non-production databases are never
+  placed in the same PCU group.
 
 ---
 **Utilisation ceilings**  
@@ -94,6 +97,7 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
         "Region": pd.Series([None] * rows, dtype="object"),
         "Engine": pd.Series([None] * rows, dtype="object"),
         "Tenancy": pd.Series([None] * rows, dtype="object"),
+        "Environment": pd.Series([None] * rows, dtype="object"),
         "Data size (GB)": pd.Series([None] * rows, dtype="float64"),
         "Write rps P90": pd.Series([None] * rows, dtype="float64"),
         "Read rps P90": pd.Series([None] * rows, dtype="float64"),
@@ -148,6 +152,10 @@ else:
                 "Tenancy": st.column_config.SelectboxColumn(
                     "Tenancy", options=["Shared", "Dedicated"],
                 ),
+                "Environment": st.column_config.TextColumn(
+                    "Environment",
+                    help="'prod' or 'production' = production; anything else = non-production.",
+                ),
                 "Data size (GB)": st.column_config.NumberColumn(
                     "Data size (GB)", min_value=0.0, format="%.4f",
                 ),
@@ -199,6 +207,7 @@ with st.expander("📋 Input data preview"):
             "Region": db.region,
             "Engine": "Vector" if db.is_vector else "Non-vector",
             "Tenancy": db.tenancy.capitalize(),
+            "Environment": "Production" if db.is_production else "Non-production",
             "Data (GB)": round(db.total_data_gb, 4),
             "Cache needed (GB)": round(db.cache_gb, 4),
             "Reads P90": db.reads_p90,
@@ -276,6 +285,8 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
             rows.append({
                 "Group": i,
                 "PCU Type": f"{g.pcu_type.name} ({g.pcu_type.tenancy.capitalize()})",
+                "Region": g.databases[0].region,
+                "Environment": "Production" if g.databases[0].is_production else "Non-production",
                 "PCUs": g.pcu_count,
                 "Databases": ", ".join(g.db_ids),
                 "Cache (GB) (used / available)": f"{g.total_cache_gb:.1f} / {g.pcu_count * g.pcu_type.cache_gb:.0f}",
@@ -331,6 +342,7 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
                         "Database": db.db_id,
                         "Region": db.region,
                         "Engine": "Vector" if db.is_vector else "Non-vector",
+                        "Environment": "Production" if db.is_production else "Non-production",
                         "Cache (GB)": round(db.cache_gb, 4),
                         "TPS demand": round(db.tps, 1),
                     })
@@ -369,6 +381,7 @@ if excluded_groups:
                 "Region": db.region,
                 "Engine": "Vector" if db.is_vector else "Non-vector",
                 "Tenancy": db.tenancy.capitalize(),
+                "Environment": "Production" if db.is_production else "Non-production",
                 "Cache needed (GB)": round(db.cache_gb, 2),
                 "TPS demand": round(db.tps, 1),
                 "PCU Type attempted": g.pcu_type.name,

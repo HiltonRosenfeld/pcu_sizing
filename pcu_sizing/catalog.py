@@ -116,10 +116,15 @@ class DbDemand:
     avg_read_kb: float        # default 4
     writes_p90: float         # write rps P90 / 7d
     avg_write_kb: float       # default 1
+    environment: str = ""     # "prod"/"production" = production; anything else = non-production
 
     @property
     def is_vector(self) -> bool:
         return self.engine_type == "cassandra-vector"
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in ("prod", "production")
 
     @property
     def cache_gb(self) -> float:
@@ -135,7 +140,7 @@ class DbDemand:
     def bucket_key(self) -> tuple:
         """Databases sharing a key may share a PCU group."""
         engine = "vector" if self.is_vector else "non-vector"
-        return (self.region, engine, self.tenancy)
+        return (self.region, engine, self.tenancy, self.is_production)
 
 
 # ---------------------------------------------------------------------------
