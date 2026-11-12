@@ -146,7 +146,7 @@ Databases may only share a group if they match on **all** of:
 1. **Deployment type**: Serverless (vector) vs non-vector (`engine type`) — never mixed.
 2. **Region** (`region` column) — PCU groups are region-specific.
 3. **Tenancy**: Shared (default) or Dedicated.
-4. **Environment**: production (`prod` / `production`) vs non-production (everything else, including blank) — production databases get their own PCU groups. E.g. a `prod` and a `non-prod` database in region `abc` are always in two distinct groups.
+4. **Environment** (optional): production (`prod` / `production`) vs non-production (everything else, including blank) — production databases get their own PCU groups. E.g. a `prod` and a `non-prod` database in region `abc` are in two distinct groups. Controlled by a toggle at the top of the app ("Group production and non-production databases separately", **default ON**). When OFF, environment is ignored for grouping, but Environment columns stay visible; a group mixing both shows `Mixed`. Implemented via `bucket_databases(databases, use_environment)` / `DbDemand.bucket_key(use_environment)`.
 
 Within a group, **one PCU type only**.
 

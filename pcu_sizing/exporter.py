@@ -20,7 +20,7 @@ def _groups_to_df(groups: list[PcuGroup]) -> pd.DataFrame:
             "Group #": i,
             "PCU Type": g.pcu_type.name,
             "Tenancy": g.pcu_type.tenancy.capitalize(),
-            "Environment": "Production" if g.databases[0].is_production else "Non-production",
+            "Environment": g.environment_label,
             "PCU Count (reserved)": g.pcu_count,
             "Databases": ", ".join(g.db_ids),
             "Total Cache (GB)": round(g.total_cache_gb, 2),

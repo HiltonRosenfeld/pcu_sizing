@@ -104,6 +104,14 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
     })[MANUAL_COLUMNS]
 
 
+use_environment = st.toggle(
+    "Group production and non-production databases separately",
+    value=True,
+    help="When on, databases with environment 'prod' or 'production' are placed in their own "
+         "PCU groups, separate from all other (non-production) databases. When off, the "
+         "environment is ignored when grouping.",
+)
+
 input_mode = st.radio(
     "Data input",
     ["Upload Excel/CSV file", "Enter data on screen"],
@@ -221,14 +229,14 @@ with st.expander("📋 Input data preview"):
 # Run optimiser
 # ---------------------------------------------------------------------------
 
-buckets = bucket_databases(databases)
+buckets = bucket_databases(databases, use_environment)
 
 @st.cache_data(show_spinner="Computing PCU mappings…")
-def compute_variants(db_key: str):
+def compute_variants(db_key: str, use_environment: bool):
     return run_all_variants(buckets)
 
 
-variant_results = compute_variants(cache_key)
+variant_results = compute_variants(cache_key, use_environment)
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +294,7 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
                 "Group": i,
                 "PCU Type": f"{g.pcu_type.name} ({g.pcu_type.tenancy.capitalize()})",
                 "Region": g.databases[0].region,
-                "Environment": "Production" if g.databases[0].is_production else "Non-production",
+                "Environment": g.environment_label,
                 "PCUs": g.pcu_count,
                 "Databases": ", ".join(g.db_ids),
                 "Cache (GB) (used / available)": f"{g.total_cache_gb:.1f} / {g.pcu_count * g.pcu_type.cache_gb:.0f}",

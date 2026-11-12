@@ -90,6 +90,12 @@ class PcuGroup:
     def db_ids(self) -> list[str]:
         return [db.db_id for db in self.databases]
 
+    @property
+    def environment_label(self) -> str:
+        """Production / Non-production, or Mixed when environment grouping is off."""
+        labels = {"Production" if db.is_production else "Non-production" for db in self.databases}
+        return labels.pop() if len(labels) == 1 else "Mixed"
+
 
 @dataclass
 class Mapping:

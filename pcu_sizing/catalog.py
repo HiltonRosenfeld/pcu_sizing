@@ -136,19 +136,24 @@ class DbDemand:
         write_units = math.ceil(self.avg_write_kb / 1)
         return self.reads_p90 * read_units + self.writes_p90 * write_units
 
-    @property
-    def bucket_key(self) -> tuple:
-        """Databases sharing a key may share a PCU group."""
+    def bucket_key(self, use_environment: bool = True) -> tuple:
+        """Databases sharing a key may share a PCU group.
+
+        When use_environment is False the environment is ignored for grouping.
+        """
         engine = "vector" if self.is_vector else "non-vector"
-        return (self.region, engine, self.tenancy, self.is_production)
+        key = (self.region, engine, self.tenancy)
+        return key + (self.is_production,) if use_environment else key
 
 
 # ---------------------------------------------------------------------------
 # Bucket a list of DbDemand objects into groups with the same key
 # ---------------------------------------------------------------------------
 
-def bucket_databases(databases: list[DbDemand]) -> dict[tuple, list[DbDemand]]:
+def bucket_databases(
+    databases: list[DbDemand], use_environment: bool = True
+) -> dict[tuple, list[DbDemand]]:
     buckets: dict[tuple, list[DbDemand]] = {}
     for db in databases:
-        buckets.setdefault(db.bucket_key, []).append(db)
+        buckets.setdefault(db.bucket_key(use_environment), []).append(db)
     return buckets
