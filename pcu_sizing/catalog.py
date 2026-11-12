@@ -48,7 +48,7 @@ CATALOG: list[PcuType] = [
         small_medium=True,
     ),
     PcuType(
-        name="General Purpose",
+        name="Large",
         tenancy="shared",
         rcu_per_hr=9.20,
         cache_gb=500,
@@ -56,7 +56,7 @@ CATALOG: list[PcuType] = [
         tps_write_heavy=33_000,
     ),
     PcuType(
-        name="General Purpose",
+        name="Large",
         tenancy="dedicated",
         rcu_per_hr=11.04,
         cache_gb=500,

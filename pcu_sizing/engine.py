@@ -130,7 +130,7 @@ def eligible_types(tenancy: str, is_vector: bool, large_only: bool = False) -> l
         # Vector databases → Cache Optimized only
         if is_vector and not pcu.is_cache_optimized:
             continue
-        # Dedicated tenancy → only dedicated types (General Purpose or Cache Optimized)
+        # Dedicated tenancy → only dedicated types (Large or Cache Optimized)
         if tenancy == "dedicated" and pcu.tenancy != "dedicated":
             continue
         if tenancy == "shared" and pcu.tenancy == "dedicated":

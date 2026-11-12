@@ -28,7 +28,6 @@ st.set_page_config(
 )
 
 st.title("PCU Sizing Tool")
-st.caption("Maps Astra DB Serverless databases onto PCU groups at minimum reserved cost.")
 
 # ---------------------------------------------------------------------------
 # Sidebar — about / help
@@ -71,8 +70,8 @@ The tool will show four mapping variants side by side.
     catalog_data = [
         {"Type": "Small",              "Tenancy": "Shared",    "RCU $/hr": 2.71,  "Cache (GB)": 125,   "TPS (RH/WH)": "15k / 6.6k"},
         {"Type": "Medium",             "Tenancy": "Shared",    "RCU $/hr": 5.43,  "Cache (GB)": 250,   "TPS (RH/WH)": "30k / 13.2k"},
-        {"Type": "General Purpose",    "Tenancy": "Shared",    "RCU $/hr": 9.20,  "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "General Purpose",    "Tenancy": "Dedicated", "RCU $/hr": 11.04, "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
+        {"Type": "Large",               "Tenancy": "Shared",    "RCU $/hr": 9.20,  "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
+        {"Type": "Large",               "Tenancy": "Dedicated", "RCU $/hr": 11.04, "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
         {"Type": "Cache Optimized",    "Tenancy": "Shared",    "RCU $/hr": 14.03, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
         {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "RCU $/hr": 19.74, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
     ]
@@ -105,7 +104,7 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
 
 
 use_environment = st.toggle(
-    "Group production and non-production databases separately",
+    "Isolate production databases",
     value=True,
     help="When on, databases with environment 'prod' or 'production' are placed in their own "
          "PCU groups, separate from all other (non-production) databases. When off, the "
@@ -113,7 +112,7 @@ use_environment = st.toggle(
 )
 
 input_mode = st.radio(
-    "Data input",
+    "**Data input**",
     ["Upload Excel/CSV file", "Enter data on screen"],
     horizontal=True,
 )
