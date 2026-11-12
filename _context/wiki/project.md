@@ -74,9 +74,9 @@ Pricing is per PCU per hour, **reserved (RCU) only** — flexible (HCU) is out o
 |-------|---------|-------|
 | Total Data (GB) — unreplicated | 500 | After compression; if RF=3, divide DC size by 3 |
 | % of data needing fast read access | 100% | What % of data must be hot in the fast-read layer |
-| Writes/sec (P90) (globally) | 100 | Writes replicate to all regions |
+| Writes/sec (P90 or max, per TPS basis) (globally) | 100 | Writes replicate to all regions |
 | Avg Write Size (KB) | 1 | |
-| Reads/sec (P90) (average across all regions) | 50 | Reads occur in a single region |
+| Reads/sec (P90 or max, per TPS basis) (average across all regions) | 50 | Reads occur in a single region |
 | Avg Read Size (KB) | 4 | |
 
 - Database type: Serverless (vector) vs Serverless (non-vector) — affects PCU limits and type
@@ -91,10 +91,10 @@ The on-demand metrics arrive as an Excel sheet. Calculator inputs map to its col
 | Calculator input | Source | Excel column / default |
 |------------------|--------|------------------------|
 | Total Data (GB) | Excel | `sstable KiB` ÷ (1024 × 1024) |
-| % of data needing fast read access | Default | 100% |
-| Writes/sec | Excel | `write rps P90 / 7d` |
+| % of data needing fast read access (cache utilisation) | User setting in app (per environment) | Default 100%; set separately for Production and Non-production |
+| Writes/sec | Excel | `write tps P90` or `write tps max` / `write tps P100` (per TPS basis setting) |
 | Avg Write Size (KB) | Default | 1 |
-| Reads/sec | Excel | `read rps P90 / 7d` |
+| Reads/sec | Excel | `read tps P90` or `read tps max` / `read tps P100` (per TPS basis setting) |
 | Avg Read Size (KB) | Default | 4 |
 | Region (for grouping) | Excel | `region` column |
 | Database type (for grouping) | Excel | `engine type` column; value `cassandra-vector` = Serverless (vector), anything else = Serverless (non-vector) |
@@ -102,10 +102,16 @@ The on-demand metrics arrive as an Excel sheet. Calculator inputs map to its col
 | Environment (for grouping) | Excel/CSV (optional) | `environment` column; `prod` or `production` (case-insensitive) = production, anything else or missing = non-production |
 
 Notes:
-- Reads/writes per second are the **P90 over 7 days** (not a true mean). **P90 is used directly for the TPS calculation** — there is no peak multiplier and P100 values are not used (changed from the earlier `avg × multiplier` / P100 approach).
+- **TPS basis setting** (app card "TPS basis", radio: **P90** default / **Maximum**) states what the tps values represent. The selected value is used directly for the TPS calculation — there is no peak multiplier or averaging. (History: originally P90 was hard-wired; before that an `avg × multiplier` / P100 approach.)
+  - **File import:** the file may contain both the P90 and the max columns; only the pair for the selected basis is read (the other pair is ignored and not required). Headers are matched case-insensitively by substring, in this priority order:
+    - P90 basis: `write/read tps P90`, then legacy `write/read rps P90 / 7d` (and looser `rps` / `p90` variants, kept for backward compatibility with older exports).
+    - Maximum basis: `write/read tps max`, then `write/read tps P100`. **`tps max` wins if both `max` and `P100` columns exist**; read and write are resolved independently (a file may use `P100` for one and `max` for the other). P100 is simply a synonym for max.
+    - If the selected basis' columns are missing the import fails with a "could not find column" error.
+  - **Manual entry:** columns are headed just `Write tps` / `Read tps`; values are taken as entered, in whatever basis is selected (changing the basis does not convert them).
+  - The basis is passed to the cached `load_databases()` and `compute_variants()` so changing it invalidates the caches. Constants `TPS_BASES`, `TPS_BASIS_LABELS` live in `pcu_sizing/importer.py`.
 - **Each Excel row is one database.**
 - `sstable KiB` is already **unreplicated and compressed** — no division by replication factor needed.
-- `read_ratio` (75% threshold) uses the same P90 reads and writes.
+- `read_ratio` (75% threshold) uses the same read and write tps values.
 
 ## Mapping Model
 
@@ -115,11 +121,13 @@ Notes:
 
 ```
 cache_gb   = total_data_gb × hot_data_pct
-tps        = reads_p90  × ROUNDUP(read_size_kb / 4, 0)
-           + writes_p90 × ROUNDUP(write_size_kb / 1, 0)
+tps        = reads_tps  × ROUNDUP(read_size_kb / 4, 0)
+           + writes_tps × ROUNDUP(write_size_kb / 1, 0)
 ```
 
-Reads are normalised to 4 KB units, writes to 1 KB units. `reads_p90` / `writes_p90` are `read rps P90 / 7d` and `write rps P90 / 7d`.
+Reads are normalised to 4 KB units, writes to 1 KB units. `reads_tps` / `writes_tps` (renamed from `reads_p90` / `writes_p90`) hold the read/write tps in the selected TPS basis (P90 or max).
+
+**Cache utilisation (`hot_data_pct`)** is set per environment via two number inputs in the app (Production %, Non-production %; default 100%, range 0–100), below the "Isolate production databases" toggle. E.g. 40% means only 40% of a database's data must be cached, so fewer PCUs are needed. The importer still sets `hot_data_pct=1.0`; `app.py` overrides it after parsing with `dataclasses.replace(db, hot_data_pct=…)` (copies, so `st.cache_data` parse results aren't mutated), choosing the value by `db.is_production`. Both percentages are passed to the cached `compute_variants()` so changing them invalidates the cache. Because it is applied in `app.py`, the "Cache needed (GB)" columns in the UI show the reduced value. Environment is classified as in Step 3 (anything other than `prod`/`production` = non-production); this setting applies regardless of the "Isolate production databases" toggle.
 
 > Cache-Optimized usable cache is **2,200 GB** (experience), not the 2,500 GB spec. General Purpose 500 GB matches spec.
 
@@ -128,7 +136,7 @@ Reads are normalised to 4 KB units, writes to 1 KB units. `reads_p90` / `writes_
 For a candidate group of databases `D` with PCU type `t` and PCU count `n`:
 
 ```
-group_read_ratio = Σ reads_p90 / Σ (reads_p90 + writes_p90)
+group_read_ratio = Σ reads_tps / Σ (reads_tps + writes_tps)
 tps_per_pcu      = read_heavy_tps[t] if group_read_ratio > 0.75 else write_heavy_tps[t]
 
 fits  ⇔  Σ cache_gb  ≤ 0.8 × n × cache_per_pcu[t]
@@ -234,7 +242,7 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
 - **Stack**: **Python** web app built with **Streamlit**. Not Node/React.
 - **Input**: Excel **or CSV** upload of on-demand metrics, **or** optional on-screen entry for small data sets (radio at top of the app switches mode; no sample-data option).
   - File type is chosen by extension in `load_databases()` (`app.py`): `.csv` → `parse_csv()`, otherwise `parse_excel()`. Both feed the shared `_parse_dataframe()` in `pcu_sizing/importer.py`, so CSV needs the same columns and gets the same validation. `parse_csv()` auto-detects the delimiter and tolerates a UTF-8 BOM.
-  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Environment (free text; `prod`/`production` = production), Data size (GB), Write rps P90, Read rps P90.
+  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Environment (free text; `prod`/`production` = production), Data size (GB), Write tps, Read tps (entered in the selected TPS basis).
   - Parsed by `parse_manual()` in `pcu_sizing/importer.py`, with the same defaults as the Excel import (100% hot data, 4 KB reads, 1 KB writes). Data size is entered directly in **GB** (Excel uses `sstable KiB`). Blank rows are ignored; rows missing data size are skipped with a warning.
 - **Output**: results shown **on screen** (Streamlit tables, one tab per variant) and also available as a **downloadable Excel file** (one sheet per variant plus a summary sheet). Group tables (on screen and Excel) include an `Environment` column (Production / Non-production).
   - In the on-screen group summary table, the `Cache (GB)` and `TPS` columns are headed `... (used / available)` to explain the `used / available` cell format. The Excel report keeps its own headings (`Total Cache (GB)`, `Total TPS`).

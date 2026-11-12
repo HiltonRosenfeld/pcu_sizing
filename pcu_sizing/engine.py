@@ -52,8 +52,8 @@ class PcuGroup:
 
     @property
     def group_read_ratio(self) -> float:
-        total_reads = sum(db.reads_p90 for db in self.databases)
-        total_rw = sum(db.reads_p90 + db.writes_p90 for db in self.databases)
+        total_reads = sum(db.reads_tps for db in self.databases)
+        total_rw = sum(db.reads_tps + db.writes_tps for db in self.databases)
         if total_rw == 0:
             return 1.0
         return total_reads / total_rw
@@ -154,8 +154,8 @@ def min_pcus(databases: list[DbDemand], pcu_type: PcuType, util_ceiling: float) 
     total_cache = sum(db.cache_gb for db in databases)
     total_tps = sum(db.tps for db in databases)
 
-    total_reads = sum(db.reads_p90 for db in databases)
-    total_rw = sum(db.reads_p90 + db.writes_p90 for db in databases)
+    total_reads = sum(db.reads_tps for db in databases)
+    total_rw = sum(db.reads_tps + db.writes_tps for db in databases)
     read_ratio = total_reads / total_rw if total_rw > 0 else 1.0
     tps_per_pcu = pcu_type.tps_read_heavy if read_ratio > 0.75 else pcu_type.tps_write_heavy
 

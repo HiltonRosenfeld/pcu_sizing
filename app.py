@@ -8,13 +8,16 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+from dataclasses import replace
 
 import pandas as pd
 import streamlit as st
 
 from pcu_sizing.catalog import bucket_databases, HOURS_PER_MONTH
 from pcu_sizing.engine import PcuGroup, run_all_variants, VARIANTS
-from pcu_sizing.importer import parse_excel, parse_csv, parse_manual, MANUAL_COLUMNS
+from pcu_sizing.importer import (
+    parse_excel, parse_csv, parse_manual, MANUAL_COLUMNS, TPS_BASIS_LABELS,
+)
 from pcu_sizing.exporter import build_excel
 
 # ---------------------------------------------------------------------------
@@ -48,10 +51,14 @@ The tool will show four mapping variants side by side.
 **Required columns** (Excel or CSV)
 - `Database name`
 - `sstable KiB` — total data size (unreplicated, compressed)
-- `write rps P90 / 7d` — write throughput at P90
-- `read rps P90 / 7d` — read throughput at P90
+- `write tps P90` and/or `write tps max` (or `write tps P100`) — write throughput
+- `read tps P90` and/or `read tps max` (or `read tps P100`) — read throughput
 - `region` — deployment region
 - `engine type` — `cassandra-vector` for vector, anything else for non-vector
+
+The file may contain both the P90 and max tps columns; the **TPS basis** setting selects
+which pair is used. Only the pair for the selected basis is required. `tps P100` is
+treated the same as `tps max` (if both are present, `tps max` is used).
 
 **Optional columns**
 - `tenancy` — `dedicated` for dedicated tenancy (default: shared)
@@ -84,10 +91,10 @@ The tool will show four mapping variants side by side.
 # ---------------------------------------------------------------------------
 
 @st.cache_data(show_spinner="Parsing file…")
-def load_databases(file_bytes: bytes, file_name: str):
+def load_databases(file_bytes: bytes, file_name: str, tps_basis: str):
     if file_name.lower().endswith(".csv"):
-        return parse_csv(io.BytesIO(file_bytes))
-    return parse_excel(io.BytesIO(file_bytes))
+        return parse_csv(io.BytesIO(file_bytes), tps_basis)
+    return parse_excel(io.BytesIO(file_bytes), tps_basis)
 
 
 def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
@@ -98,24 +105,55 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
         "Tenancy": pd.Series([None] * rows, dtype="object"),
         "Environment": pd.Series([None] * rows, dtype="object"),
         "Data size (GB)": pd.Series([None] * rows, dtype="float64"),
-        "Write rps P90": pd.Series([None] * rows, dtype="float64"),
-        "Read rps P90": pd.Series([None] * rows, dtype="float64"),
+        "Write tps": pd.Series([None] * rows, dtype="float64"),
+        "Read tps": pd.Series([None] * rows, dtype="float64"),
     })[MANUAL_COLUMNS]
 
 
-use_environment = st.toggle(
-    "Isolate production databases",
-    value=True,
-    help="When on, databases with environment 'prod' or 'production' are placed in their own "
-         "PCU groups, separate from all other (non-production) databases. When off, the "
-         "environment is ignored when grouping.",
-)
+# Settings: four bordered cards side by side, one per setting group
+card_input, card_tps, card_cache, card_grouping = st.columns([1, 1, 1.6, 1])
 
-input_mode = st.radio(
-    "**Data input**",
-    ["Upload Excel/CSV file", "Enter data on screen"],
-    horizontal=True,
-)
+with card_input.container(border=True):
+    st.markdown("**Data input**")
+    input_mode = st.radio(
+        "Data input",
+        ["Upload Excel/CSV file", "Enter data on screen"],
+        label_visibility="collapsed",
+    )
+
+with card_tps.container(border=True):
+    st.markdown("**TPS basis**")
+    tps_basis_label = st.radio(
+        "TPS basis",
+        [TPS_BASIS_LABELS["p90"], TPS_BASIS_LABELS["max"]],
+        label_visibility="collapsed",
+        help="Which throughput statistic the tps values represent. For file import, selects "
+             "the 'tps P90' or 'tps max' (or 'tps P100') columns. For on-screen entry, values are taken as "
+             "entered in the selected basis.",
+    )
+    tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
+
+with card_cache.container(border=True):
+    st.markdown("**Cache utilisation** (% of data held in cache)")
+    cache_col_prod, cache_col_nonprod = st.columns(2)
+    prod_cache_pct = cache_col_prod.number_input(
+        "Production (%)", min_value=0.0, max_value=100.0, value=100.0, step=5.0,
+        help="Cache needed = data size × this percentage, for production databases.",
+    )
+    nonprod_cache_pct = cache_col_nonprod.number_input(
+        "Non-production (%)", min_value=0.0, max_value=100.0, value=100.0, step=5.0,
+        help="Cache needed = data size × this percentage, for non-production databases.",
+    )
+
+with card_grouping.container(border=True):
+    st.markdown("**Grouping**")
+    use_environment = st.toggle(
+        "Isolate production databases",
+        value=True,
+        help="When on, databases with environment 'prod' or 'production' are placed in their own "
+             "PCU groups, separate from all other (non-production) databases. When off, the "
+             "environment is ignored when grouping.",
+    )
 
 if input_mode == "Upload Excel/CSV file":
     uploaded_file = st.file_uploader(
@@ -130,7 +168,7 @@ if input_mode == "Upload Excel/CSV file":
 
     try:
         file_bytes = uploaded_file.read()
-        databases, warnings = load_databases(file_bytes, uploaded_file.name)
+        databases, warnings = load_databases(file_bytes, uploaded_file.name, tps_basis)
     except Exception as exc:
         st.error(f"Failed to parse file: {exc}")
         st.stop()
@@ -166,11 +204,13 @@ else:
                 "Data size (GB)": st.column_config.NumberColumn(
                     "Data size (GB)", min_value=0.0, format="%.4f",
                 ),
-                "Write rps P90": st.column_config.NumberColumn(
-                    "Write rps P90", min_value=0.0,
+                "Write tps": st.column_config.NumberColumn(
+                    "Write tps", min_value=0.0,
+                    help="Enter in the selected TPS basis (P90 or maximum).",
                 ),
-                "Read rps P90": st.column_config.NumberColumn(
-                    "Read rps P90", min_value=0.0,
+                "Read tps": st.column_config.NumberColumn(
+                    "Read tps", min_value=0.0,
+                    help="Enter in the selected TPS basis (P90 or maximum).",
                 ),
             },
             key="manual_editor",
@@ -201,6 +241,12 @@ if warnings:
 
 st.success(f"Loaded **{len(databases)}** database(s) from **{source_label}**.")
 
+# Apply the per-environment cache utilisation (copies, so cached parse results are not mutated)
+databases = [
+    replace(db, hot_data_pct=(prod_cache_pct if db.is_production else nonprod_cache_pct) / 100)
+    for db in databases
+]
+
 
 # ---------------------------------------------------------------------------
 # Show raw input data
@@ -217,8 +263,8 @@ with st.expander("📋 Input data preview"):
             "Environment": "Production" if db.is_production else "Non-production",
             "Data (GB)": round(db.total_data_gb, 4),
             "Cache needed (GB)": round(db.cache_gb, 4),
-            "Reads P90": db.reads_p90,
-            "Writes P90": db.writes_p90,
+            "Read tps": db.reads_tps,
+            "Write tps": db.writes_tps,
             "TPS demand": round(db.tps, 1),
         })
     st.dataframe(pd.DataFrame(input_rows), hide_index=True, width="stretch")
@@ -231,11 +277,15 @@ with st.expander("📋 Input data preview"):
 buckets = bucket_databases(databases, use_environment)
 
 @st.cache_data(show_spinner="Computing PCU mappings…")
-def compute_variants(db_key: str, use_environment: bool):
+def compute_variants(
+    db_key: str, use_environment: bool, prod_pct: float, nonprod_pct: float, tps_basis: str
+):
     return run_all_variants(buckets)
 
 
-variant_results = compute_variants(cache_key, use_environment)
+variant_results = compute_variants(
+    cache_key, use_environment, prod_cache_pct, nonprod_cache_pct, tps_basis
+)
 
 
 # ---------------------------------------------------------------------------

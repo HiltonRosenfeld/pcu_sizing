@@ -112,9 +112,9 @@ class DbDemand:
     tenancy: str              # "shared" | "dedicated"
     total_data_gb: float
     hot_data_pct: float       # 0–1
-    reads_p90: float          # read rps P90 / 7d
+    reads_tps: float          # read tps (P90 or max, per the selected tps basis)
     avg_read_kb: float        # default 4
-    writes_p90: float         # write rps P90 / 7d
+    writes_tps: float         # write tps (P90 or max, per the selected tps basis)
     avg_write_kb: float       # default 1
     environment: str = ""     # "prod"/"production" = production; anything else = non-production
 
@@ -134,7 +134,7 @@ class DbDemand:
     def tps(self) -> float:
         read_units = math.ceil(self.avg_read_kb / 4)
         write_units = math.ceil(self.avg_write_kb / 1)
-        return self.reads_p90 * read_units + self.writes_p90 * write_units
+        return self.reads_tps * read_units + self.writes_tps * write_units
 
     def bucket_key(self, use_environment: bool = True) -> tuple:
         """Databases sharing a key may share a PCU group.

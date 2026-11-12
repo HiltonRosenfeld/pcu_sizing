@@ -4,8 +4,12 @@ Excel import — parses the on-demand metrics Excel export into DbDemand objects
 Expected columns (case-insensitive matching):
   - database name                      → db_id (required)
   - sstable KiB                        → total_data_gb
-  - write rps P90 / 7d                 → writes_p90
-  - read rps P90 / 7d                  → reads_p90
+  - write tps P90 and/or write tps max → writes_tps
+  - read tps P90 and/or read tps max   → reads_tps
+    (the file may contain both; the tps_basis argument selects which is used,
+     "p90" or "max". "tps P100" is accepted as a synonym for "tps max"; if a
+     file has both, "tps max" is preferred. Legacy "write/read rps P90 / 7d"
+     headers are still accepted for the P90 basis.)
   - region                             → region
   - engine type                        → engine_type ("cassandra-vector" = vector)
   - environment (optional)             → environment ("prod"/"production" = production,
@@ -60,29 +64,55 @@ def _try_find_col(df: pd.DataFrame, *patterns: str) -> str | None:
 # Main import function
 # ---------------------------------------------------------------------------
 
-def parse_excel(file: Union[str, io.BytesIO]) -> tuple[list[DbDemand], list[str]]:
+TPS_BASES = ("p90", "max")
+TPS_BASIS_LABELS = {"p90": "P90", "max": "Maximum"}
+
+_WRITE_TPS_PATTERNS = {
+    "p90": ("write tps p90", "write rps p90", "write rps", "writes p90", "write p90"),
+    "max": ("write tps max", "write tps p100"),
+}
+_READ_TPS_PATTERNS = {
+    "p90": ("read tps p90", "read rps p90", "read rps", "reads p90", "read p90"),
+    "max": ("read tps max", "read tps p100"),
+}
+
+
+def parse_excel(
+    file: Union[str, io.BytesIO], tps_basis: str = "p90"
+) -> tuple[list[DbDemand], list[str]]:
     """
     Parse the on-demand metrics Excel file.
+
+    tps_basis selects which tps columns are used: "p90" or "max".
 
     Returns:
         (databases, warnings)  where databases is a list of DbDemand objects
         and warnings is a list of human-readable warning strings.
     """
-    return _parse_dataframe(pd.read_excel(file, engine="openpyxl"))
+    return _parse_dataframe(pd.read_excel(file, engine="openpyxl"), tps_basis)
 
 
-def parse_csv(file: Union[str, io.BytesIO]) -> tuple[list[DbDemand], list[str]]:
+def parse_csv(
+    file: Union[str, io.BytesIO], tps_basis: str = "p90"
+) -> tuple[list[DbDemand], list[str]]:
     """Parse the on-demand metrics CSV file (same columns as the Excel export)."""
-    return _parse_dataframe(pd.read_csv(file, encoding="utf-8-sig", sep=None, engine="python"))
+    return _parse_dataframe(
+        pd.read_csv(file, encoding="utf-8-sig", sep=None, engine="python"), tps_basis
+    )
 
 
-def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
+def _parse_dataframe(
+    df: pd.DataFrame, tps_basis: str = "p90"
+) -> tuple[list[DbDemand], list[str]]:
+    if tps_basis not in TPS_BASES:
+        raise ValueError(f"Unknown tps basis {tps_basis!r}; expected one of {TPS_BASES}.")
+    basis_label = TPS_BASIS_LABELS[tps_basis]
     warnings: list[str] = []
 
     # --- Locate columns ---
     col_sstable   = _find_col(df, "sstable kib", "sstable_kib", "sstable")
-    col_writes    = _find_col(df, "write rps p90", "write rps", "writes p90", "write p90")
-    col_reads     = _find_col(df, "read rps p90", "read rps", "reads p90", "read p90")
+    col_writes    = _find_col(df, *_WRITE_TPS_PATTERNS[tps_basis])
+    col_reads     = _find_col(df, *_READ_TPS_PATTERNS[tps_basis])
     col_region    = _find_col(df, "region")
     col_engine    = _find_col(df, "engine type", "engine_type", "engine")
 
@@ -110,16 +140,16 @@ def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
         total_data_gb = sstable_kib / (1024 * 1024)  # KiB → GiB
 
         try:
-            writes_p90 = float(row[col_writes])
+            writes_tps = float(row[col_writes])
         except (ValueError, TypeError):
-            writes_p90 = 0.0
-            warnings.append(f"Row {idx+1} ({db_id}): missing write rps P90 — defaulting to 0.")
+            writes_tps = 0.0
+            warnings.append(f"Row {idx+1} ({db_id}): missing write tps {basis_label} — defaulting to 0.")
 
         try:
-            reads_p90 = float(row[col_reads])
+            reads_tps = float(row[col_reads])
         except (ValueError, TypeError):
-            reads_p90 = 0.0
-            warnings.append(f"Row {idx+1} ({db_id}): missing read rps P90 — defaulting to 0.")
+            reads_tps = 0.0
+            warnings.append(f"Row {idx+1} ({db_id}): missing read tps {basis_label} — defaulting to 0.")
 
         region = str(row[col_region]).strip() if pd.notna(row[col_region]) else "unknown"
         engine_type = str(row[col_engine]).strip() if pd.notna(row[col_engine]) else ""
@@ -142,9 +172,9 @@ def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
             environment=environment,
             total_data_gb=total_data_gb,
             hot_data_pct=1.0,
-            reads_p90=reads_p90,
+            reads_tps=reads_tps,
             avg_read_kb=4.0,
-            writes_p90=writes_p90,
+            writes_tps=writes_tps,
             avg_write_kb=1.0,
         ))
 
@@ -160,7 +190,7 @@ def _parse_dataframe(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
 
 MANUAL_COLUMNS = [
     "Database", "Region", "Engine", "Tenancy", "Environment",
-    "Data size (GB)", "Write rps P90", "Read rps P90",
+    "Data size (GB)", "Write tps", "Read tps",
 ]
 
 
@@ -168,8 +198,9 @@ def parse_manual(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
     """
     Convert rows entered on screen (columns as in MANUAL_COLUMNS) into DbDemand objects.
 
-    Fully blank rows are ignored. Rows without a data size are skipped with a warning.
-    Missing read/write rates default to 0.
+    The tps values are taken as entered; they are in whatever basis (P90 or max)
+    the user has selected. Fully blank rows are ignored. Rows without a data size
+    are skipped with a warning. Missing read/write rates default to 0.
     """
     warnings: list[str] = []
     databases: list[DbDemand] = []
@@ -207,9 +238,9 @@ def parse_manual(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
             environment=environment,
             total_data_gb=data_gb,
             hot_data_pct=1.0,
-            reads_p90=_num(row.get("Read rps P90")) or 0.0,
+            reads_tps=_num(row.get("Read tps")) or 0.0,
             avg_read_kb=4.0,
-            writes_p90=_num(row.get("Write rps P90")) or 0.0,
+            writes_tps=_num(row.get("Write tps")) or 0.0,
             avg_write_kb=1.0,
         ))
 

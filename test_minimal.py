@@ -228,9 +228,9 @@ if sample_mode == "Synthetic Test Workload (Instant)":
                 tenancy="shared",
                 total_data_gb=float(i * 50),
                 hot_data_pct=1.0,
-                reads_p90=float(i * 200),
+                reads_tps=float(i * 200),
                 avg_read_kb=4.0,
-                writes_p90=float(i * 100),
+                writes_tps=float(i * 100),
                 avg_write_kb=1.0,
             )
         )
