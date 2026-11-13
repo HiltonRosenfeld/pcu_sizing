@@ -36,7 +36,9 @@ The tool is designed with **ease of use** as a first-class concern to support fu
 
 ### PCU Catalog (Reserved / RCU pricing only)
 
-Pricing is per PCU per hour, **reserved (RCU) only** — flexible (HCU) is out of scope. HCU rates are kept for reference.
+Pricing is per PCU per hour, **reserved (RCU) only** — flexible (HCU) is out of scope. **Prices are no longer hardcoded:** they vary by provider, geographic region and tier and are read from the cached pricing data (see [Pricing](#pricing)), in **Resource Units (RU)**. `PcuType` in `catalog.py` only points at pricing tables (`price_table`, plus `addon_table` for Cache Optimized); it holds specs and limits, not prices.
+
+The `RCU`/`HCU` columns below are the **original hardcoded reference values** (a mix of AWS regions on the pricing page, e.g. Small 2.71 = AWS APAC Standard, Large 9.20 = AWS EMEA Standard); they are no longer used by the code.
 
 | PCU type | Tenancy | RCU $/hr | HCU $/hr | Specs | Cache per PCU used for sizing | TPS read-heavy / write-heavy |
 |----------|---------|----------|----------|-------|-------------------------------|------------------------------|
@@ -47,7 +49,7 @@ Pricing is per PCU per hour, **reserved (RCU) only** — flexible (HCU) is out o
 | Cache Optimized (Large) | Shared | 9.20 + 4.83 = **14.03** | — | 16 vCPU, 128 GB RAM | **2,200 GB usable** (spec 2.5 TB; 2.2 TB from experience) | 75,000 / 33,000 |
 | Cache Optimized (Large) | Dedicated | 11.04 + 8.70 = **19.74** | — | 16 vCPU, 128 GB RAM | **2,200 GB usable** | 75,000 / 33,000 |
 
-- Cache Optimized = Large PCU price + cache-optimisation add-on (4.83 shared, 8.70 dedicated).
+- Cache Optimized = Large PCU price + cache-optimisation add-on (from the matching Large and add-on tables for the same provider/region/tier; originally 4.83 shared, 8.70 dedicated).
 - Small and Medium have **no Cache Optimized option and no Dedicated tenancy**.
 - "Read-heavy" applies when the **group's** read ratio > 75%; otherwise the write-heavy (lower) TPS ceiling applies.
 - Cost observations: 2× Small (5.42) ≈ 1× Medium (5.43) for the same capacity; Medium mainly helps stay under the PCU-count cap. Large is cheaper per TPS and per GB of cache than Small/Medium. Cache Optimized is roughly a third of General Purpose cost per GB of cache.
@@ -96,7 +98,8 @@ The on-demand metrics arrive as an Excel sheet. Calculator inputs map to its col
 | Avg Write Size (KB) | Default | 1 |
 | Reads/sec | Excel | `read tps P90` or `read tps max` / `read tps P100` (per TPS basis setting) |
 | Avg Read Size (KB) | Default | 4 |
-| Region (for grouping) | Excel | `region` column |
+| Provider (for pricing) | Excel/CSV (optional column) | `provider` column (`AWS`/`GCP`/`Azure`; also accepts `Amazon`, `Google`, `Microsoft` etc.). If missing/unrecognised the database is unmapped — see [Pricing](#pricing) |
+| Region (for grouping and pricing) | Excel | `region` column — the specific cloud provider region (e.g. `ap-southeast-1`); its geographic pricing region and **pricing tier** come from the regions page (see [Pricing](#pricing)) |
 | Database type (for grouping) | Excel | `engine type` column; value `cassandra-vector` = Serverless (vector), anything else = Serverless (non-vector) |
 | Tenancy | Default | Shared (per-database Dedicated flag) |
 | Environment (for grouping) | Excel/CSV (optional) | `environment` column; `prod` or `production` (case-insensitive) = production, anything else or missing = non-production |
@@ -152,7 +155,7 @@ fits  ⇔  Σ cache_gb  ≤ 0.8 × n × cache_per_pcu[t]
 Databases may only share a group if they match on **all** of:
 
 1. **Deployment type**: Serverless (vector) vs non-vector (`engine type`) — never mixed.
-2. **Region** (`region` column) — PCU groups are region-specific.
+2. **Region** (`region` column) — PCU groups are region-specific. The bucket key also includes **provider**, **geographic pricing region** and **tier**, so each group has a single price point.
 3. **Tenancy**: Shared (default) or Dedicated.
 4. **Environment** (optional): production (`prod` / `production`) vs non-production (everything else, including blank) — production databases get their own PCU groups. E.g. a `prod` and a `non-prod` database in region `abc` are in two distinct groups. Controlled by a toggle at the top of the app ("Group production and non-production databases separately", **default ON**). When OFF, environment is ignored for grouping, but Environment columns stay visible; a group mixing both shows `Mixed`. Implemented via `bucket_databases(databases, use_environment)` / `DbDemand.bucket_key(use_environment)`.
 
@@ -168,11 +171,15 @@ Within each bucket, choose the partition of databases into groups, and for each 
 | PCUs per group | Target **≤ 5** (headroom against the 10-PCU hard cap) | **Exactly 1** (min = max = reserved = 1) |
 | Dedicated tenancy | General Purpose / Cache Optimized Dedicated only | Cache Optimized Dedicated only |
 | Table limit | ~5,000 per group — **not enforced** (counts unavailable) | same |
+| Pricing | A PCU type with **no published price** for the group's provider/region/tier is excluded from the choice. The tier is a property of the region, not a user setting | same |
 
 Overflow handling:
 - A single database that needs **6–10 PCUs** gets its own group, flagged **"no headroom"**.
 - A database (or group) that would need **> 10 PCUs** is **flagged for the DataStax/IBM account team**; it cannot be placed.
 - A vector database needing > 1 Cache Optimized PCU (at 80%) is flagged for the account team.
+
+
+No-pricing handling: if **no** eligible type has a price, the group is sized on the eligible types with the fewest PCUs (cost comparison uses PCU count via `PcuGroup.comparison_cost`) and flagged **"no pricing available"**; it contributes **0 RU** to totals and the UI warns. Because provider/region/tenancy are identical within a bucket, all groups in a bucket are priced or unpriced together.
 
 Type selection (`evaluate_group`): a PCU type whose required count exceeds the group limit (10 non-vector, 1 vector) is **excluded from the cost comparison** — clamping the count and costing it would make an unusable Small/Medium look cheapest. It is shown (flagged "needs account team", type needing the fewest PCUs) only when no eligible type fits. In the exact optimiser, a mapping containing any such unplaceable group always loses to a fully placeable mapping, regardless of cost.
 
@@ -180,7 +187,7 @@ Rationale for the 5-PCU target: balances headroom within the 10-PCU group cap ag
 
 ### Output (per bucket)
 
-For each group: PCU type, tenancy, PCU count (reserved), list of databases, summed cache/TPS vs. capacity (utilisation %), hourly cost; plus flags and overall total cost.
+For each group: PCU type, tenancy, provider, region and pricing region, PCU count (reserved), list of databases, summed cache/TPS vs. capacity (utilisation %), hourly cost; plus flags and overall total cost. Storage is shown per group as a separate figure (see below).
 
 **Alternative mappings (named variants):** the tool shows the following named variants side by side. Each shows total cost, difference vs. Lowest cost, and group/PCU/utilisation summary. All variants obey the same hard constraints; they differ only in the objective or an extra restriction. Duplicate results (same mapping) are collapsed into one.
 
@@ -193,7 +200,22 @@ For each group: PCU type, tenancy, PCU count (reserved), list of databases, summ
 
 The variant set is confirmed (Lowest cost, Fewest groups, Most headroom, Large PCUs only) and can be extended later.
 
-**Cost presentation:** hourly cost × **730 hours/month** (24 × 365 / 12) for monthly cost; annual = monthly × 12.
+**Cost presentation:** all costs are in **Resource Units (RU)**, not dollars (the pricing page is in RU; the app labels everything RU). Hourly cost × **730 hours/month** (24 × 365 / 12) for monthly cost; annual = monthly × 12.
+
+**Storage cost:** per group = total data GB × storage rate (RU per GB stored per month, same provider/region/tier). Shown as a separate column / metric (`Storage RU/mo`, Excel `Storage Cost (RU/month)`); **excluded from the optimiser objective and from the PCU totals**. `None`/n.a. when no storage rate is published.
+
+## Pricing
+
+Implemented in `pcu_sizing/pricing.py` (separate module, like importer/exporter).
+
+- **Sources (two pages):** (1) the [IBM Astra DB pricing page](https://www.ibm.com/docs/en/watsonxdata/saas?topic=services-astra-db-pricing) — prices by provider × geographic region × tier; (2) the [DataStax Astra DB Serverless regions page](https://docs.datastax.com/astra-db-serverless/databases/database-regions.html) — for each specific provider region its geography and **pricing tier**. Both return **HTTP 403** / need JS rendering for automated requests, so the app does **not** fetch them. The user opens each in a browser and supplies the **rendered HTML** (saved page, or DevTools → Elements → right-click `<html>` → Copy outerHTML), uploaded or pasted, in the sidebar **Pricing → Refresh pricing** expander. **Each page is optional** — a page left empty keeps its previously cached data. Copies live at `data/astra_db_pricing.html` and `data/astra_db_regions.html` (only needed when refreshing).
+- **Parsing:** `parse_pricing_html()` / `parse_regions_html()` use the standard-library `HTMLParser` (no new dependency). Pricing tables are matched by caption: Small PCU, Medium PCU, Large PCU Shared/Dedicated, Cache optimization add-on Shared/Dedicated, Storage pricing; other tables (on-demand, data transfer, private link) are ignored. Blank cells (`&nbsp;`) mean "no price published" and are stored as `null`. The regions page tables have no captions: they are identified by the preceding heading ("AWS regions", "Google Cloud regions", "Microsoft Azure regions") and the `Region` / `Pricing` header columns. Geography → pricing region: Americas → North America, Asia Pacific → APAC, EMEA → EMEA, except **São Paulo (`brazilsouth`) → SA** (the page files it under Americas but it is priced as SA). A parse failure raises `ValueError` and nothing is written, so a bad paste never replaces a good cache.
+- **PCU tables** have columns `<Tier> (Reserved)` / `<Tier> (Hourly)`; only **Reserved** is used. The add-on and storage tables have one column per tier (Standard, Premium, Premium Plus). Storage is RU per GB stored.
+- **Cache:** `data/pricing.json` (committed seed, written atomically by `refresh_pricing(pricing_html, regions_html)`; holds `tables` + `regions`, with `page_last_updated`, `pricing_refreshed_at`, `regions_refreshed_at`, and `refreshed_at` = latest change, used in the `compute_variants()` cache key). `load_pricing()` returns `None` if missing/unreadable; `missing_parts()` reports a missing pricing/regions part — the app then shows a "refresh pricing" prompt and stops (no hardcoded fallback). The refresh only runs on the button; nothing is fetched at start-up.
+- **Lookup:** `PriceBook(data).pcu_rate(pcu_type, provider, geo, tier)` / `.storage_rate(provider, geo, tier)`; Cache Optimized = Large rate + add-on rate (None if either missing). **Tier is per region** (from the regions page, e.g. AWS `us-east-1` = Standard, GCP `australia-southeast1` = Premium, Azure `brazilsouth` = Premium Plus); there is **no global tier setting**. Provider, geographic region and tier are **per database/group**, so one run can mix providers, regions and tiers.
+- **Region lookup:** `locate(data, provider, region)` → `(provider, geo, tier)` from the cached regions page. Matching ignores case, spaces, `-` and `_`. The earlier hand-written `_REGIONS` table was removed: **a region is mapped only if it is on the regions page** (e.g. AWS `sa-east-1` is not).
+- **Unmapped provider/region:** `unmapped_locations(data, databases)` lists databases whose provider or region isn't on the regions page; the app shows a warning listing them (no override pickers). They get a blank geo region and tier and their groups are flagged "no pricing available" (0 RU). Fix by correcting the provider/region value or refreshing the regions page.
+- Engine API: `evaluate_group` / `optimise_*` / `run_all_variants` all take a `pricebook` argument. `DbDemand` carries `provider`, `geo_region`, `tier` (set by `resolve_locations(data, databases)`). `PcuGroup` carries `rate_per_pcu` and `storage_rate`; `hourly_cost` is 0 when `rate_per_pcu` is `None`. The Excel export and group tables include `Provider`, `Pricing Region` and `Pricing Tier` columns.
 
 ## Planning Rules and Constraints
 
@@ -242,7 +264,7 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
 - **Stack**: **Python** web app built with **Streamlit**. Not Node/React.
 - **Input**: Excel **or CSV** upload of on-demand metrics, **or** optional on-screen entry for small data sets (radio at top of the app switches mode; no sample-data option).
   - File type is chosen by extension in `load_databases()` (`app.py`): `.csv` → `parse_csv()`, otherwise `parse_excel()`. Both feed the shared `_parse_dataframe()` in `pcu_sizing/importer.py`, so CSV needs the same columns and gets the same validation. `parse_csv()` auto-detects the delimiter and tolerates a UTF-8 BOM.
-  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Environment (free text; `prod`/`production` = production), Data size (GB), Write tps, Read tps (entered in the selected TPS basis).
+  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Provider (AWS/GCP/Azure), Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Environment (free text; `prod`/`production` = production), Data size (GB), Write tps, Read tps (entered in the selected TPS basis).
   - Parsed by `parse_manual()` in `pcu_sizing/importer.py`, with the same defaults as the Excel import (100% hot data, 4 KB reads, 1 KB writes). Data size is entered directly in **GB** (Excel uses `sstable KiB`). Blank rows are ignored; rows missing data size are skipped with a warning.
 - **Output**: results shown **on screen** (Streamlit tables, one tab per variant) and also available as a **downloadable Excel file** (one sheet per variant plus a summary sheet). Group tables (on screen and Excel) include an `Environment` column (Production / Non-production).
   - In the on-screen group summary table, the `Cache (GB)` and `TPS` columns are headed `... (used / available)` to explain the `used / available` cell format. The Excel report keeps its own headings (`Total Cache (GB)`, `Total TPS`).
@@ -250,7 +272,7 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
   - Use `width="stretch"` on `st.dataframe` / `st.data_editor`. `use_container_width` is deprecated (its stated removal date, 2025-12-31, has passed). `width="stretch"` needs a recent Streamlit and crashes old ones (e.g. 1.35: `TypeError: 'str' object cannot be interpreted as an integer`).
   - History: the project was briefly pinned to `streamlit==1.35`, which required `use_container_width=True` and an extra `pyarrow<21` pin (1.35 needs `numpy<2`). Both were dropped when moving to a current version.
   - If the Streamlit version is changed again, re-check `app.py` for API compatibility. Headless check: run it with `streamlit.testing.v1.AppTest` (use an absolute script path and put the project on `PYTHONPATH`), in both input modes, with `manual_df` preset in `session_state` to exercise the results rendering.
-  - `test_app.py` is a Streamlit diagnostic page for Streamlit Cloud deployment debugging, not a pytest suite.
+  - `test_app.py` / `test_minimal.py` (Streamlit Cloud diagnostic pages, not pytest suites) were deleted from the working tree (uncommitted) during the pricing change; restore with `git restore` if still wanted — they need updating for the `pricebook` argument and `provider` field.
 - **Optimiser**: **exact search per bucket** (one row per database keeps buckets small enough), with a **heuristic fallback** when a bucket has too many databases for exact search (threshold TBD during implementation).
 - **Phase 1**: Web app with metric import and database→PCU mapping output
 - **Phase 2**: Expand access to the wider IBM team with polished UX

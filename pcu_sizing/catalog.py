@@ -16,10 +16,11 @@ from typing import Optional
 class PcuType:
     name: str            # human-readable label
     tenancy: str         # "shared" | "dedicated"
-    rcu_per_hr: float    # reserved (RCU) cost per PCU per hour
+    price_table: str     # pricing table (see pricing.py) holding the PCU's reserved RU/hr
     cache_gb: float      # usable cache per PCU (GB)
     tps_read_heavy: int  # TPS ceiling (group read ratio > 75%)
     tps_write_heavy: int # TPS ceiling (group read ratio ≤ 75%)
+    addon_table: str = ""  # cache optimization add-on table, added to price_table (Cache Optimized only)
     allows_dedicated: bool = False
     allows_cache_optimized: bool = False
     is_cache_optimized: bool = False
@@ -27,12 +28,14 @@ class PcuType:
     small_medium: bool = False   # Small/Medium flag
 
 
-# Catalog — all PCU types (shared and dedicated variants as separate entries)
+# Catalog — all PCU types (shared and dedicated variants as separate entries).
+# Prices are not stored here: they depend on provider, region and tier and come from the
+# cached pricing data (pricing.py).
 CATALOG: list[PcuType] = [
     PcuType(
         name="Small",
         tenancy="shared",
-        rcu_per_hr=2.71,
+        price_table="small",
         cache_gb=125,
         tps_read_heavy=15_000,
         tps_write_heavy=6_600,
@@ -41,7 +44,7 @@ CATALOG: list[PcuType] = [
     PcuType(
         name="Medium",
         tenancy="shared",
-        rcu_per_hr=5.43,
+        price_table="medium",
         cache_gb=250,
         tps_read_heavy=30_000,
         tps_write_heavy=13_200,
@@ -50,7 +53,7 @@ CATALOG: list[PcuType] = [
     PcuType(
         name="Large",
         tenancy="shared",
-        rcu_per_hr=9.20,
+        price_table="large_shared",
         cache_gb=500,
         tps_read_heavy=75_000,
         tps_write_heavy=33_000,
@@ -58,7 +61,7 @@ CATALOG: list[PcuType] = [
     PcuType(
         name="Large",
         tenancy="dedicated",
-        rcu_per_hr=11.04,
+        price_table="large_dedicated",
         cache_gb=500,
         tps_read_heavy=75_000,
         tps_write_heavy=33_000,
@@ -67,7 +70,8 @@ CATALOG: list[PcuType] = [
     PcuType(
         name="Cache Optimized",
         tenancy="shared",
-        rcu_per_hr=14.03,   # 9.20 + 4.83
+        price_table="large_shared",
+        addon_table="cache_shared",
         cache_gb=2_200,
         tps_read_heavy=75_000,
         tps_write_heavy=33_000,
@@ -76,7 +80,8 @@ CATALOG: list[PcuType] = [
     PcuType(
         name="Cache Optimized",
         tenancy="dedicated",
-        rcu_per_hr=19.74,   # 11.04 + 8.70
+        price_table="large_dedicated",
+        addon_table="cache_dedicated",
         cache_gb=2_200,
         tps_read_heavy=75_000,
         tps_write_heavy=33_000,
@@ -117,6 +122,9 @@ class DbDemand:
     writes_tps: float         # write tps (P90 or max, per the selected tps basis)
     avg_write_kb: float       # default 1
     environment: str = ""     # "prod"/"production" = production; anything else = non-production
+    provider: str = ""        # cloud provider ("AWS" | "GCP" | "Azure" once resolved)
+    geo_region: str = ""      # geographic pricing region ("North America", "EMEA", ...); "" = unknown
+    tier: str = ""            # pricing tier of the region ("Standard" | "Premium" | "Premium Plus"); "" = unknown
 
     @property
     def is_vector(self) -> bool:
@@ -142,7 +150,7 @@ class DbDemand:
         When use_environment is False the environment is ignored for grouping.
         """
         engine = "vector" if self.is_vector else "non-vector"
-        key = (self.region, engine, self.tenancy)
+        key = (self.provider, self.geo_region, self.tier, self.region, engine, self.tenancy)
         return key + (self.is_production,) if use_environment else key
 
 

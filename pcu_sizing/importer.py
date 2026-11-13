@@ -11,6 +11,9 @@ Expected columns (case-insensitive matching):
      file has both, "tps max" is preferred. Legacy "write/read rps P90 / 7d"
      headers are still accepted for the P90 basis.)
   - region                             → region
+  - provider (optional)                → provider ("AWS"/"GCP"/"Azure"; used for pricing — if the
+                                          column is missing the provider is left blank and the app
+                                          asks for one)
   - engine type                        → engine_type ("cassandra-vector" = vector)
   - environment (optional)             → environment ("prod"/"production" = production,
                                           anything else/missing = non-production)
@@ -118,6 +121,9 @@ def _parse_dataframe(
 
     col_db = _find_col(df, "database name")
 
+    # Optional provider column (needed for pricing; blank values are resolved in the app)
+    col_provider = _try_find_col(df, "provider")
+
     # Optional tenancy column
     col_tenancy = _try_find_col(df, "tenancy", "dedicated")
     # Optional environment column
@@ -153,6 +159,9 @@ def _parse_dataframe(
 
         region = str(row[col_region]).strip() if pd.notna(row[col_region]) else "unknown"
         engine_type = str(row[col_engine]).strip() if pd.notna(row[col_engine]) else ""
+        provider = (
+            str(row[col_provider]).strip() if col_provider and pd.notna(row[col_provider]) else ""
+        )
 
         if col_tenancy:
             val = str(row[col_tenancy]).strip().lower()
@@ -167,6 +176,7 @@ def _parse_dataframe(
         databases.append(DbDemand(
             db_id=db_id,
             region=region,
+            provider=provider,
             engine_type=engine_type,
             tenancy=tenancy,
             environment=environment,
@@ -189,7 +199,7 @@ def _parse_dataframe(
 # ---------------------------------------------------------------------------
 
 MANUAL_COLUMNS = [
-    "Database", "Region", "Engine", "Tenancy", "Environment",
+    "Database", "Provider", "Region", "Engine", "Tenancy", "Environment",
     "Data size (GB)", "Write tps", "Read tps",
 ]
 
@@ -225,6 +235,8 @@ def parse_manual(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
 
         region = row.get("Region")
         region = str(region).strip() if pd.notna(region) and str(region).strip() else "unknown"
+        provider = row.get("Provider")
+        provider = str(provider).strip() if pd.notna(provider) else ""
         engine = str(row.get("Engine") or "").strip().lower()
         tenancy = str(row.get("Tenancy") or "").strip().lower()
         environment = row.get("Environment")
@@ -233,6 +245,7 @@ def parse_manual(df: pd.DataFrame) -> tuple[list[DbDemand], list[str]]:
         databases.append(DbDemand(
             db_id=db_id,
             region=region,
+            provider=provider,
             engine_type="cassandra-vector" if engine == "vector" else "",
             tenancy="dedicated" if tenancy == "dedicated" else "shared",
             environment=environment,

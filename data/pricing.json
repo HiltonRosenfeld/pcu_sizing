@@ -1,0 +1,809 @@
+{
+ "version": 2,
+ "source_url": "https://www.ibm.com/docs/en/watsonxdata/saas?topic=services-astra-db-pricing",
+ "page_last_updated": "2026-10-23",
+ "tables": {
+  "small": {
+   "AWS": {
+    "North America": {
+     "Standard (Reserved)": 2.29,
+     "Standard (Hourly)": 3.82,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 2.63,
+     "Standard (Hourly)": 4.39,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 2.71,
+     "Standard (Hourly)": 4.52,
+     "Premium (Reserved)": 2.82,
+     "Premium (Hourly)": 4.7,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": 4.9
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 3.43,
+     "Premium Plus (Hourly)": 5.71
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard (Reserved)": 3.31,
+     "Standard (Hourly)": 5.48,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 3.31,
+     "Standard (Hourly)": 5.43,
+     "Premium (Reserved)": 3.5,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 3.83,
+     "Standard (Hourly)": 6.38,
+     "Premium (Reserved)": 3.83,
+     "Premium (Hourly)": 6.41,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard (Reserved)": 3.33,
+     "Standard (Hourly)": 5.56,
+     "Premium (Reserved)": 3.52,
+     "Premium (Hourly)": 5.87,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 3.77,
+     "Standard (Hourly)": 6.29,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": 5.48,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 3.49,
+     "Standard (Hourly)": 5.81,
+     "Premium (Reserved)": 4.04,
+     "Premium (Hourly)": 6.73,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": 8.62
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 5.17,
+     "Premium Plus (Hourly)": 5.17
+    }
+   }
+  },
+  "medium": {
+   "AWS": {
+    "North America": {
+     "Standard (Reserved)": 4.83,
+     "Standard (Hourly)": 8.05,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 5.27,
+     "Standard (Hourly)": 8.78,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 5.43,
+     "Standard (Hourly)": 9.05,
+     "Premium (Reserved)": 5.64,
+     "Premium (Hourly)": 9.4,
+     "Premium Plus (Reserved)": 5.87,
+     "Premium Plus (Hourly)": 9.79
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 6.85,
+     "Premium Plus (Hourly)": 11.42
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard (Reserved)": 5.35,
+     "Standard (Hourly)": 8.5,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 5.94,
+     "Standard (Hourly)": 9.2,
+     "Premium (Reserved)": 6.19,
+     "Premium (Hourly)": 10.23,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 4.87,
+     "Standard (Hourly)": 8.12,
+     "Premium (Reserved)": 6.16,
+     "Premium (Hourly)": 10.26,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard (Reserved)": 7.34,
+     "Standard (Hourly)": 11.37,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": 12.0,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 7.7,
+     "Standard (Hourly)": 12.37,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 6.97,
+     "Standard (Hourly)": 11.62,
+     "Premium (Reserved)": 9.17,
+     "Premium (Hourly)": 15.29,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 10.34,
+     "Premium Plus (Hourly)": 17.24
+    }
+   }
+  },
+  "large_shared": {
+   "AWS": {
+    "North America": {
+     "Standard (Reserved)": 9.28,
+     "Standard (Hourly)": 12.42,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 9.2,
+     "Standard (Hourly)": 13.79,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 8.01,
+     "Standard (Hourly)": 12.01,
+     "Premium (Reserved)": 10.06,
+     "Premium (Hourly)": 15.09,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 12.21,
+     "Premium Plus (Hourly)": 18.31
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": 13.15,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 9.39,
+     "Standard (Hourly)": 14.09,
+     "Premium (Reserved)": 10.57,
+     "Premium (Hourly)": 15.85,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 9.93,
+     "Standard (Hourly)": 14.89,
+     "Premium (Reserved)": 11.28,
+     "Premium (Hourly)": 16.92,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard (Reserved)": 9.02,
+     "Standard (Hourly)": 13.52,
+     "Premium (Reserved)": 9.86,
+     "Premium (Hourly)": 14.78,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 9.94,
+     "Standard (Hourly)": 14.91,
+     "Premium (Reserved)": 11.39,
+     "Premium (Hourly)": 17.08,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 9.43,
+     "Standard (Hourly)": 14.14,
+     "Premium (Reserved)": 10.99,
+     "Premium (Hourly)": 16.48,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 13.44,
+     "Premium Plus (Hourly)": 20.16
+    }
+   }
+  },
+  "large_dedicated": {
+   "AWS": {
+    "North America": {
+     "Standard (Reserved)": 9.94,
+     "Standard (Hourly)": 14.91,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 11.04,
+     "Standard (Hourly)": 16.55,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 9.61,
+     "Standard (Hourly)": 14.42,
+     "Premium (Reserved)": 12.07,
+     "Premium (Hourly)": 18.11,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 14.65,
+     "Premium Plus (Hourly)": 21.97
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard (Reserved)": 10.52,
+     "Standard (Hourly)": 15.78,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 11.27,
+     "Standard (Hourly)": 16.91,
+     "Premium (Reserved)": 12.68,
+     "Premium (Hourly)": 19.03,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 11.91,
+     "Standard (Hourly)": 17.87,
+     "Premium (Reserved)": 13.54,
+     "Premium (Hourly)": 20.31,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard (Reserved)": 10.82,
+     "Standard (Hourly)": 16.23,
+     "Premium (Reserved)": 11.83,
+     "Premium (Hourly)": 17.74,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "EMEA": {
+     "Standard (Reserved)": 11.93,
+     "Standard (Hourly)": 17.89,
+     "Premium (Reserved)": 13.67,
+     "Premium (Hourly)": 20.5,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "APAC": {
+     "Standard (Reserved)": 11.32,
+     "Standard (Hourly)": 16.97,
+     "Premium (Reserved)": 13.18,
+     "Premium (Hourly)": 19.78,
+     "Premium Plus (Reserved)": null,
+     "Premium Plus (Hourly)": null
+    },
+    "SA": {
+     "Standard (Reserved)": null,
+     "Standard (Hourly)": null,
+     "Premium (Reserved)": null,
+     "Premium (Hourly)": null,
+     "Premium Plus (Reserved)": 16.13,
+     "Premium Plus (Hourly)": 24.2
+    }
+   }
+  },
+  "cache_shared": {
+   "AWS": {
+    "North America": {
+     "Standard": 3.23,
+     "Premium": null,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 3.66,
+     "Premium": null,
+     "Premium Plus": null
+    },
+    "APAC": {
+     "Standard": 4.83,
+     "Premium": 3.57,
+     "Premium Plus": null
+    },
+    "SA": {
+     "Standard": null,
+     "Premium": null,
+     "Premium Plus": 5.18
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard": 3.44,
+     "Premium": null,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 3.7,
+     "Premium": 4.25,
+     "Premium Plus": null
+    },
+    "APAC": {
+     "Standard": 3.86,
+     "Premium": 4.61,
+     "Premium Plus": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard": 4.08,
+     "Premium": 4.48,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 4.56,
+     "Premium": 5.49,
+     "Premium Plus": null
+    },
+    "APAC": {
+     "Standard": 4.6,
+     "Premium": 4.66,
+     "Premium Plus": null
+    },
+    "SA": {
+     "Standard": null,
+     "Premium": null,
+     "Premium Plus": 6.27
+    }
+   }
+  },
+  "cache_dedicated": {
+   "AWS": {
+    "North America": {
+     "Standard": 5.82,
+     "Premium": 5.87,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 6.58,
+     "Premium": 7.35,
+     "Premium Plus": 6.54
+    },
+    "APAC": {
+     "Standard": 8.7,
+     "Premium": 6.42,
+     "Premium Plus": null
+    },
+    "SA": {
+     "Standard": null,
+     "Premium": null,
+     "Premium Plus": 9.33
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard": 6.2,
+     "Premium": 7.06,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 6.65,
+     "Premium": 7.66,
+     "Premium Plus": 9.02
+    },
+    "APAC": {
+     "Standard": 6.96,
+     "Premium": 8.29,
+     "Premium Plus": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard": 7.35,
+     "Premium": 8.07,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 8.2,
+     "Premium": 9.87,
+     "Premium Plus": 11.93
+    },
+    "APAC": {
+     "Standard": 8.28,
+     "Premium": 8.39,
+     "Premium Plus": null
+    },
+    "SA": {
+     "Standard": null,
+     "Premium": null,
+     "Premium Plus": 11.29
+    }
+   }
+  },
+  "storage": {
+   "AWS": {
+    "North America": {
+     "Standard": 0.42,
+     "Premium": 0.42,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 0.41,
+     "Premium": 0.43,
+     "Premium Plus": 0.45
+    },
+    "APAC": {
+     "Standard": 0.39,
+     "Premium": 0.45,
+     "Premium Plus": null
+    },
+    "SA": {
+     "Standard": null,
+     "Premium": null,
+     "Premium Plus": 0.68
+    }
+   },
+   "GCP": {
+    "North America": {
+     "Standard": 0.42,
+     "Premium": 0.42,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 0.44,
+     "Premium": 0.46,
+     "Premium Plus": null
+    },
+    "APAC": {
+     "Standard": 0.45,
+     "Premium": 0.47,
+     "Premium Plus": null
+    }
+   },
+   "Azure": {
+    "North America": {
+     "Standard": 0.42,
+     "Premium": 0.42,
+     "Premium Plus": null
+    },
+    "EMEA": {
+     "Standard": 0.44,
+     "Premium": 0.44,
+     "Premium Plus": null
+    },
+    "APAC": {
+     "Standard": 0.45,
+     "Premium": 0.45,
+     "Premium Plus": null
+    },
+    "SA": {
+     "Standard": null,
+     "Premium": null,
+     "Premium Plus": 0.63
+    }
+   }
+  }
+ },
+ "refreshed_at": "2026-11-13T01:02:07+00:00",
+ "pricing_refreshed_at": "2026-11-13T01:02:07+00:00",
+ "regions": {
+  "AWS": {
+   "ca-central-1": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Montr\u00e9al"
+   },
+   "us-east-1": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Virginia"
+   },
+   "us-east-2": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Ohio"
+   },
+   "us-west-2": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Oregon"
+   },
+   "ap-east-1": {
+    "geo": "APAC",
+    "tier": "Premium",
+    "location": "Asia Pacific Hong Kong"
+   },
+   "ap-south-1": {
+    "geo": "APAC",
+    "tier": "Standard",
+    "location": "Asia Pacific Mumbai"
+   },
+   "ap-southeast-1": {
+    "geo": "APAC",
+    "tier": "Standard",
+    "location": "Asia Pacific Singapore"
+   },
+   "ap-southeast-2": {
+    "geo": "APAC",
+    "tier": "Premium",
+    "location": "Asia Pacific Sydney"
+   },
+   "eu-central-1": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA Frankfurt"
+   },
+   "eu-west-1": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA Ireland"
+   },
+   "eu-west-2": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA London"
+   }
+  },
+  "GCP": {
+   "northamerica-northeast1": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Montr\u00e9al"
+   },
+   "northamerica-northeast2": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Toronto"
+   },
+   "us-central1": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Iowa"
+   },
+   "us-east1": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas South Carolina"
+   },
+   "us-east4": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Virginia"
+   },
+   "us-west1": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Oregon"
+   },
+   "us-west4": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Nevada"
+   },
+   "asia-northeast1": {
+    "geo": "APAC",
+    "tier": "Standard",
+    "location": "Asia Pacific Tokyo"
+   },
+   "asia-south1": {
+    "geo": "APAC",
+    "tier": "Standard",
+    "location": "Asia Pacific Mumbai"
+   },
+   "australia-southeast1": {
+    "geo": "APAC",
+    "tier": "Premium",
+    "location": "Asia Pacific Sydney"
+   },
+   "europe-west1": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA Belgium"
+   },
+   "europe-west2": {
+    "geo": "EMEA",
+    "tier": "Premium",
+    "location": "EMEA London"
+   },
+   "europe-west3": {
+    "geo": "EMEA",
+    "tier": "Premium",
+    "location": "EMEA Frankfurt"
+   },
+   "europe-west4": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA Netherlands"
+   }
+  },
+  "Azure": {
+   "brazilsouth": {
+    "geo": "SA",
+    "tier": "Premium Plus",
+    "location": "Americas Sao Paulo"
+   },
+   "canadacentral": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Toronto"
+   },
+   "centralus": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Iowa"
+   },
+   "eastus": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Virginia"
+   },
+   "eastus2": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Virginia"
+   },
+   "southcentralus": {
+    "geo": "North America",
+    "tier": "Premium",
+    "location": "Americas Texas"
+   },
+   "westus2": {
+    "geo": "North America",
+    "tier": "Standard",
+    "location": "Americas Washington"
+   },
+   "westus3": {
+    "geo": "North America",
+    "tier": "Premium",
+    "location": "Americas Arizona"
+   },
+   "australiaeast": {
+    "geo": "APAC",
+    "tier": "Premium",
+    "location": "Asia Pacific New South Wales"
+   },
+   "centralindia": {
+    "geo": "APAC",
+    "tier": "Standard",
+    "location": "Asia Pacific Pune"
+   },
+   "northeurope": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA Ireland"
+   },
+   "westeurope": {
+    "geo": "EMEA",
+    "tier": "Standard",
+    "location": "EMEA Netherlands"
+   }
+  }
+ },
+ "regions_source_url": "https://docs.datastax.com/astra-db-serverless/databases/database-regions.html",
+ "regions_refreshed_at": "2026-11-13T01:02:07+00:00"
+}

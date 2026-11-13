@@ -7,3 +7,4 @@ _context/
 *.pyo
 .DS_Store
 archive/
+data/astra_db_pricing.html

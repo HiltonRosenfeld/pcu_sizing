@@ -1,0 +1,2 @@
+- Update algorithm from new benchmarks document
+- Consider ramp up speed of peaks (HCU)

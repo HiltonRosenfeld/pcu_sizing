@@ -19,6 +19,10 @@ from pcu_sizing.importer import (
     parse_excel, parse_csv, parse_manual, MANUAL_COLUMNS, TPS_BASIS_LABELS,
 )
 from pcu_sizing.exporter import build_excel
+from pcu_sizing.pricing import (
+    PRICING_URL, PROVIDERS, REGIONS_URL, PriceBook,
+    load_pricing, missing_parts, refresh_pricing, resolve_locations, unmapped_locations,
+)
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -75,15 +79,62 @@ treated the same as `tps max` (if both are present, `tps max` is used).
 
     st.header("PCU Catalog")
     catalog_data = [
-        {"Type": "Small",              "Tenancy": "Shared",    "RCU $/hr": 2.71,  "Cache (GB)": 125,   "TPS (RH/WH)": "15k / 6.6k"},
-        {"Type": "Medium",             "Tenancy": "Shared",    "RCU $/hr": 5.43,  "Cache (GB)": 250,   "TPS (RH/WH)": "30k / 13.2k"},
-        {"Type": "Large",               "Tenancy": "Shared",    "RCU $/hr": 9.20,  "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "Large",               "Tenancy": "Dedicated", "RCU $/hr": 11.04, "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "Cache Optimized",    "Tenancy": "Shared",    "RCU $/hr": 14.03, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "RCU $/hr": 19.74, "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
+        {"Type": "Small",              "Tenancy": "Shared",    "Cache (GB)": 125,   "TPS (RH/WH)": "15k / 6.6k"},
+        {"Type": "Medium",             "Tenancy": "Shared",    "Cache (GB)": 250,   "TPS (RH/WH)": "30k / 13.2k"},
+        {"Type": "Large",              "Tenancy": "Shared",    "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
+        {"Type": "Large",              "Tenancy": "Dedicated", "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
+        {"Type": "Cache Optimized",    "Tenancy": "Shared",    "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
+        {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
     ]
     st.dataframe(pd.DataFrame(catalog_data), hide_index=True, width="stretch")
 
+    st.header("Pricing")
+    with st.expander("Refresh pricing"):
+        st.markdown(
+            f"Two pages feed the pricing: the [Astra DB pricing page]({PRICING_URL}) (prices) and "
+            f"the [Astra DB regions page]({REGIONS_URL}) (each region's geography and pricing "
+            "tier). Both block automated downloads, so open each page in your browser, let it "
+            "finish loading, then either save it as HTML (**Save Page As**) and upload it, or "
+            "copy the rendered HTML (DevTools → Elements → right-click `<html>` → Copy → Copy "
+            "outerHTML) and paste it. Either page is optional: a page you leave empty keeps its "
+            "cached data. The result is cached in `data/pricing.json`."
+        )
+        page_inputs = {}
+        for key, label in (("pricing", "Pricing page"), ("regions", "Regions page")):
+            upload = st.file_uploader(f"{label} HTML", type=["html", "htm"], key=f"{key}_html")
+            paste = st.text_area(f"…or paste the {label.lower()} HTML", height=80, key=f"{key}_paste")
+            page_inputs[key] = (
+                upload.getvalue().decode("utf-8", errors="replace") if upload is not None else paste
+            )
+        if st.button("Refresh pricing"):
+            if not any(v.strip() for v in page_inputs.values()):
+                st.warning("Upload or paste at least one of the pages first.")
+            else:
+                try:
+                    refresh_pricing(page_inputs["pricing"], page_inputs["regions"])
+                    st.success("Pricing refreshed.")
+                except Exception as exc:
+                    st.error(f"Could not refresh pricing (existing data kept): {exc}")
+
+    pricing = load_pricing()
+    absent = missing_parts(pricing)
+    if absent:
+        st.error("Missing cached data: " + ", ".join(absent) + ". Refresh pricing above.")
+    else:
+        st.caption(
+            f"Pricing page last updated: {pricing.get('page_last_updated') or 'unknown'}  \n"
+            f"Pricing cached: {pricing.get('pricing_refreshed_at', 'unknown')}  \n"
+            f"Regions cached: {pricing.get('regions_refreshed_at', 'unknown')}  \n"
+            "All costs are in Resource Units (RU)."
+        )
+
+if missing_parts(pricing):
+    st.warning(
+        "Pricing data is incomplete (`data/pricing.json` is missing or lacks the "
+        + " / ".join(missing_parts(pricing))
+        + "). Use **Refresh pricing** in the sidebar to load it from the saved pages."
+    )
+    st.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +151,7 @@ def load_databases(file_bytes: bytes, file_name: str, tps_basis: str):
 def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
     return pd.DataFrame({
         "Database": pd.Series([None] * rows, dtype="object"),
+        "Provider": pd.Series([None] * rows, dtype="object"),
         "Region": pd.Series([None] * rows, dtype="object"),
         "Engine": pd.Series([None] * rows, dtype="object"),
         "Tenancy": pd.Series([None] * rows, dtype="object"),
@@ -126,10 +178,11 @@ with card_tps.container(border=True):
     tps_basis_label = st.radio(
         "TPS basis",
         [TPS_BASIS_LABELS["p90"], TPS_BASIS_LABELS["max"]],
+        captions=[
+            "tps specified as p90.",
+            "tps specified as max value."
+        ],
         label_visibility="collapsed",
-        help="Which throughput statistic the tps values represent. For file import, selects "
-             "the 'tps P90' or 'tps max' (or 'tps P100') columns. For on-screen entry, values are taken as "
-             "entered in the selected basis.",
     )
     tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
 
@@ -159,7 +212,6 @@ if input_mode == "Upload Excel/CSV file":
     uploaded_file = st.file_uploader(
         "Upload on-demand metrics Excel or CSV file",
         type=["xlsx", "xls", "csv"],
-        help="Excel or CSV export of on-demand Astra DB metrics.",
     )
 
     if uploaded_file is None:
@@ -190,7 +242,10 @@ else:
             width="stretch",
             column_config={
                 "Database": st.column_config.TextColumn("Database name", required=True),
-                "Region": st.column_config.TextColumn("Region"),
+                "Provider": st.column_config.SelectboxColumn("Provider", options=list(PROVIDERS)),
+                "Region": st.column_config.TextColumn(
+                    "Region", help="Cloud provider region, e.g. us-east-1, europe-west1, westeurope.",
+                ),
                 "Engine": st.column_config.SelectboxColumn(
                     "Engine", options=["Non-vector", "Vector"],
                 ),
@@ -241,6 +296,19 @@ if warnings:
 
 st.success(f"Loaded **{len(databases)}** database(s) from **{source_label}**.")
 
+# Map each database's provider/region to its geographic pricing region and tier (regions page)
+unmapped = unmapped_locations(pricing, databases)
+if unmapped:
+    st.warning(
+        "These provider / region combinations are not on the Astra DB regions page, so the "
+        "databases using them cannot be priced (their groups are flagged \"no pricing "
+        "available\"): "
+        + ", ".join(f"**{prov or '(no provider)'} / {reg}**" for prov, reg in unmapped)
+        + ". Check the provider and region values, or refresh the regions page."
+    )
+databases = resolve_locations(pricing, databases)
+pricebook = PriceBook(pricing)
+
 # Apply the per-environment cache utilisation (copies, so cached parse results are not mutated)
 databases = [
     replace(db, hot_data_pct=(prod_cache_pct if db.is_production else nonprod_cache_pct) / 100)
@@ -257,7 +325,10 @@ with st.expander("📋 Input data preview"):
     for db in databases:
         input_rows.append({
             "Database": db.db_id,
+            "Provider": db.provider,
             "Region": db.region,
+            "Pricing region": db.geo_region,
+            "Tier": db.tier,
             "Engine": "Vector" if db.is_vector else "Non-vector",
             "Tenancy": db.tenancy.capitalize(),
             "Environment": "Production" if db.is_production else "Non-production",
@@ -278,13 +349,15 @@ buckets = bucket_databases(databases, use_environment)
 
 @st.cache_data(show_spinner="Computing PCU mappings…")
 def compute_variants(
-    db_key: str, use_environment: bool, prod_pct: float, nonprod_pct: float, tps_basis: str
+    db_key: str, use_environment: bool, prod_pct: float, nonprod_pct: float, tps_basis: str,
+    pricing_stamp: str,
 ):
-    return run_all_variants(buckets)
+    return run_all_variants(buckets, pricebook)
 
 
 variant_results = compute_variants(
-    cache_key, use_environment, prod_cache_pct, nonprod_cache_pct, tps_basis
+    cache_key, use_environment, prod_cache_pct, nonprod_cache_pct, tps_basis,
+    pricing.get("refreshed_at", ""),
 )
 
 
@@ -293,21 +366,21 @@ variant_results = compute_variants(
 # ---------------------------------------------------------------------------
 
 st.subheader("Mapping variants")
+#st.caption(body="All values in IBM Resource Units (RU)")
 
-summary_cols = st.columns(len(VARIANTS))
-for col, (variant_name, _) in zip(summary_cols, VARIANTS):
-    groups = variant_results[variant_name]
-    total_monthly = sum(g.monthly_cost for g in groups)
-    num_groups = len(groups)
-    num_flags = sum(1 for g in groups if g.flag)
-    col.metric(
-        label=variant_name,
-        value=f"${total_monthly:,.0f}/mo",
-        delta=f"{num_groups} group{'s' if num_groups != 1 else ''}"
-              + (f" · ⚠️ {num_flags} flag{'s' if num_flags != 1 else ''}" if num_flags else ""),
-        delta_color="off",
-    )
-
+# summary_cols = st.columns(len(VARIANTS))
+# for col, (variant_name, _) in zip(summary_cols, VARIANTS):
+#     groups = variant_results[variant_name]
+#     total_monthly = sum(g.monthly_cost for g in groups)
+#     num_groups = len(groups)
+#     num_flags = sum(1 for g in groups if g.flag)
+#     col.metric(
+#         label=variant_name,
+#         value=f"{total_monthly:,.0f}",
+#         delta=f"{num_groups} group{'s' if num_groups != 1 else ''}"
+#               + (f" · ⚠️ {num_flags} flag{'s' if num_flags != 1 else ''}" if num_flags else ""),
+#         delta_color="off",
+#     )
 
 # ---------------------------------------------------------------------------
 # Per-variant tabs
@@ -328,11 +401,41 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
         total_annual = total_monthly * 12
 
         # Cost summary
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Groups", len(groups))
-        c2.metric("Hourly cost", f"${total_hourly:,.4f}")
-        c3.metric("Monthly cost", f"${total_monthly:,.2f}")
-        c4.metric("Annual cost", f"${total_annual:,.2f}")
+        total_storage = sum(g.storage_monthly_cost or 0.0 for g in groups)
+        # c1, c2, c3, c4, c5 = st.columns(5)
+        # c1.metric("Groups", len(groups))
+        # c2.metric("Hourly cost", f"{total_hourly:,.2f}")
+        # c3.metric("Monthly cost", f"{total_monthly:,.0f}")
+        # c4.metric("Annual cost", f"{total_annual:,.0f}")
+        # c5.metric("Storage / month", f"{total_storage:,.0f}",
+        #           help="Data size × storage rate. Shown separately; not part of the PCU cost "
+        #                "and not used when choosing the mapping.")
+        # if any(g.flag == "no pricing available" for g in groups):
+        #     st.warning(
+        #         "Some groups have no published price for their provider / region / tier (or their "
+        #         "region is not on the regions page). They are "
+        #         "flagged \"no pricing available\" and counted as 0 RU in the totals."
+        #     )
+
+        # st.divider()
+
+        # Cost summary by component
+        _, hourly_col, monthly_col, annual_col = st.columns([1, 2, 2, 2])
+        hourly_col.markdown("**RU/hr**", text_alignment="center")
+        monthly_col.markdown("**RU/mo**", text_alignment="center")
+        annual_col.markdown("**RU/yr**", text_alignment="center")
+
+        pcu_label, pcu_hourly, pcu_monthly, pcu_annual = st.columns([1, 2, 2, 2], vertical_alignment="center")
+        pcu_label.markdown("**PCU Groups**")
+        pcu_hourly.markdown(f"## {total_hourly:,.2f}", text_alignment="right")
+        pcu_monthly.markdown(f"## {total_monthly:,.2f}", text_alignment="right")
+        pcu_annual.markdown(f"## {total_annual:,.2f}", text_alignment="right")
+
+        storage_label, storage_hourly, storage_monthly, storage_annual = st.columns([1, 2, 2, 2], vertical_alignment="center")
+        storage_label.markdown("**Storage**")
+        storage_hourly.markdown(f"### {total_storage / HOURS_PER_MONTH:,.2f}", text_alignment="right")
+        storage_monthly.markdown(f"### {total_storage:,.2f}", text_alignment="right")
+        storage_annual.markdown(f"### {total_storage * 12:,.2f}", text_alignment="right")
 
         st.divider()
 
@@ -342,7 +445,10 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
             rows.append({
                 "Group": i,
                 "PCU Type": f"{g.pcu_type.name} ({g.pcu_type.tenancy.capitalize()})",
+                "Provider": g.provider,
                 "Region": g.databases[0].region,
+                "Pricing region": g.geo_region,
+                "Tier": g.tier,
                 "Environment": g.environment_label,
                 "PCUs": g.pcu_count,
                 "Databases": ", ".join(g.db_ids),
@@ -350,15 +456,15 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
                 "Cache util": g.cache_utilisation,
                 "TPS (used / available)": f"{g.total_tps:,.0f} / {g.pcu_count * g.tps_ceiling_per_pcu:,}",
                 "TPS util": g.tps_utilisation,
-                "$/hr": g.hourly_cost,
-                "$/mo": g.monthly_cost,
+                "RU/hr": g.hourly_cost,
+                "RU/mo": g.monthly_cost,
                 "Flag": g.flag,
             })
 
         df = pd.DataFrame(rows)
 
         def _flag_style(val):
-            if val == "needs account team":
+            if val in ("needs account team", "no pricing available"):
                 return "background-color: #ffdddd; color: #cc0000; font-weight: bold"
             if val == "no headroom":
                 return "background-color: #fff3cd; color: #856404; font-weight: bold"
@@ -376,9 +482,9 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
             .format({
                 "Cache util": "{:.1%}",
                 "TPS util": "{:.1%}",
-                "$/hr": "${:.4f}",
-                "$/mo": "${:,.2f}",
-            })
+                "RU/hr": "{:.4f}",
+                "RU/mo": "{:,.2f}",
+            }, na_rep="n/a")
             .map(_flag_style, subset=["Flag"])
             .map(_util_style, subset=["Cache util", "TPS util"])
         )
@@ -390,13 +496,14 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
             for i, g in enumerate(groups, 1):
                 st.markdown(f"**Group {i}: {g.pcu_type.name} ({g.pcu_type.tenancy.capitalize()}) × {g.pcu_count} PCU{'s' if g.pcu_count != 1 else ''}**")
                 if g.flag:
-                    flag_color = "red" if g.flag == "needs account team" else "orange"
+                    flag_color = "red" if g.flag in ("needs account team", "no pricing available") else "orange"
                     st.markdown(f":{flag_color}[⚠ {g.flag}]")
 
                 detail_rows = []
                 for db in g.databases:
                     detail_rows.append({
                         "Database": db.db_id,
+                        "Provider": db.provider,
                         "Region": db.region,
                         "Engine": "Vector" if db.is_vector else "Non-vector",
                         "Environment": "Production" if db.is_production else "Non-production",
@@ -412,7 +519,7 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
                     f"({g.cache_utilisation:.1%})  |  "
                     f"TPS: **{g.total_tps:,.0f}** / {cap_tps:,} "
                     f"({g.tps_utilisation:.1%})  |  "
-                    f"Cost: **${g.hourly_cost:.4f}/hr** · **${g.monthly_cost:,.2f}/mo**"
+                    f"Cost: **{g.hourly_cost:.4f} RU/hr** · **{g.monthly_cost:,.2f} RU/mo**"
                 )
                 st.divider()
 
