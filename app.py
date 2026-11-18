@@ -173,22 +173,28 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
 st.markdown(
     """
     <style>
-    /* Equal height cards and compact layout */
+    /* Equal height cards and compact layout: stretch every wrapper layer between
+       the column and the bordered container (descendant selectors, not strict children) */
     [data-testid="stHorizontalBlock"] {
-        align-items: stretch;
+        align-items: stretch !important;
     }
     [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-        display: flex;
-        flex-direction: column;
+        display: flex !important;
+        flex-direction: column !important;
     }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlockBorderWrapper"] {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlockBorderWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        height: 100% !important;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlockBorderWrapper"] {
         padding: 0.75rem 0.85rem;
     }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlockBorderWrapper"] > div {
-        flex: 1;
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+        flex: 1 1 auto !important;
     }
     /* Compact field labels and spacing */
     [data-testid="stVerticalBlockBorderWrapper"] label p {
@@ -204,14 +210,75 @@ st.markdown(
     [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stSelectbox"] div[data-baseweb="select"] {
         font-size: 0.85rem !important;
     }
+
+
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Build concise summary for collapsed expander title
-mode_summary = st.session_state.get("input_mode", "Upload file")
+st.html("""
+<style>
+/* 1. Force the dropzone section into a single horizontal row */
+[data-testid="stFileUploader"] section {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    padding: 10px 16px !important;
+}
+
+/* 2. Put the Browse button first on the left */
+[data-testid="stFileUploader"] section button {
+    order: 1 !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+}
+
+/* 3. Put the instructions container second (to the right of the button) */
+[data-testid="stFileUploaderDropzoneInstructions"],
+[data-testid="stFileUploaderDropzoneInstructions"] * {
+    order: 2 !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+}
+
+</style>
+""")
+
+# Build concise summary for expander title, including the loaded source and database count.
+# Computed from session state (before the widgets render) so the header is current on every run.
 tps_summary = st.session_state.get("tps_basis_label", TPS_BASIS_LABELS["p90"])
+_tps_basis_hdr = next((k for k, v in TPS_BASIS_LABELS.items() if v == tps_summary), "p90")
+if st.session_state.get("input_mode", "Upload file") == "Upload file":
+    _file_hdr = st.session_state.get("uploaded_metrics_file")
+    if _file_hdr is None:
+        mode_summary = "No file uploaded"
+    else:
+        try:
+            _dbs_hdr, _ = load_databases(_file_hdr.getvalue(), _file_hdr.name, _tps_basis_hdr)
+            mode_summary = f"{_file_hdr.name} ({len(_dbs_hdr)} databases)"
+        except Exception:
+            mode_summary = f"{_file_hdr.name} (could not be parsed)"
+else:
+    _manual_hdr = st.session_state.get("manual_df")
+    if _manual_hdr is None:
+        mode_summary = "On-screen entry (no data calculated)"
+    else:
+        try:
+            _dbs_hdr, _ = parse_manual(_manual_hdr)
+            mode_summary = f"On-screen entry ({len(_dbs_hdr)} databases)"
+        except Exception:
+            mode_summary = "On-screen entry (invalid data)"
 workload_summary = WORKLOAD_LABELS.get(st.session_state.get("workload_key", WORKLOAD_DEFAULT), "Catalog")
 if st.session_state.get("workload_key", WORKLOAD_DEFAULT) != WORKLOAD_DEFAULT:
     lat_s = LATENCY_LABELS.get(st.session_state.get("latency_val", ""), "")
@@ -224,9 +291,9 @@ config_summary = f"{mode_summary} · {tps_summary} TPS · {workload_summary} · 
 
 # Settings: Four compact configuration sections in a collapsible expander
 with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
-    card_source, card_tps, card_workload, card_capacity = st.columns([1.1, 0.9, 1.8, 1.4])
+    card_source, card_tps, card_workload, card_capacity = st.columns([1.1, 0.9, 1.8, 1.4], border=True)
 
-    with card_source.container(border=True):
+    with card_source.container():
         st.markdown("**Data source**")
         input_mode = st.segmented_control(
             "Data source",
@@ -245,9 +312,8 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
                 label_visibility="collapsed",
                 help="Upload an on-demand metrics Excel or CSV file.",
             )
-        source_status_placeholder = st.empty()
 
-    with card_tps.container(border=True):
+    with card_tps.container():
         st.markdown("**TPS basis**")
         tps_basis_label = st.segmented_control(
             "TPS basis",
@@ -260,7 +326,7 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
         tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
         st.caption(f"Using **{tps_basis_label}** throughput values.")
 
-    with card_workload.container(border=True):
+    with card_workload.container():
         st.markdown("**Workload model**")
         workload_key = st.selectbox(
             "Workload type",
@@ -297,7 +363,7 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
             st.caption("Standard catalog limits (15k/30k/75k TPS).")
             throughput_config = ThroughputConfig(workload=WORKLOAD_DEFAULT)
 
-    with card_capacity.container(border=True):
+    with card_capacity.container():
         st.markdown("**Capacity**")
         cache_col_prod, cache_col_nonprod = st.columns(2)
         prod_cache_pct = cache_col_prod.number_input(
@@ -329,7 +395,6 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
 
 if input_mode == "Upload file":
     if uploaded_file is None:
-        source_status_placeholder.caption("Select a `.xlsx`, `.xls`, or `.csv` file")
         st.info("Upload an Excel or CSV file above to begin.")
         st.stop()
 
@@ -338,14 +403,11 @@ if input_mode == "Upload file":
         databases, warnings = load_databases(file_bytes, uploaded_file.name, tps_basis)
         cache_key = hashlib.md5(file_bytes).hexdigest()
         source_label = uploaded_file.name
-        source_status_placeholder.caption(f"✓ Loaded **{len(databases)}** database(s)")
     except Exception as exc:
-        source_status_placeholder.error(f"Failed to parse file: {exc}")
         st.error(f"Failed to parse file: {exc}")
         st.stop()
 
 else:
-    source_status_placeholder.caption("On-screen entry active")
     st.caption(
         "Add one row per database (use the empty row at the bottom to add more; "
         "select a row and press Delete to remove it). Data size is the total "
@@ -391,6 +453,7 @@ else:
 
     if submitted:
         st.session_state["manual_df"] = edited.reset_index(drop=True)
+        st.rerun()  # refresh the Configuration header with the new database count
 
     if "manual_df" not in st.session_state:
         st.info("Enter your databases above and click Calculate to begin.")
@@ -405,7 +468,6 @@ else:
 
     cache_key = hashlib.md5(manual_df.to_csv().encode()).hexdigest()
     source_label = "on-screen entry"
-    source_status_placeholder.caption(f"✓ Loaded **{len(databases)}** database(s)")
 
 if warnings:
     with st.expander(f"⚠️ {len(warnings)} import warning(s)"):

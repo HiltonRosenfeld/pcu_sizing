@@ -37,7 +37,7 @@ RATIO_60_40 = "60_40"
 RATIO_80_20 = "80_20"
 
 RATIO_MODE_LABELS: dict[str, str] = {
-    RATIO_DYNAMIC: "Dynamic (calculated from TPS)",
+    RATIO_DYNAMIC: "Dynamic (from data)",
     RATIO_20_80: "20% Reads / 80% Writes",
     RATIO_60_40: "60% Reads / 40% Writes",
     RATIO_80_20: "80% Reads / 20% Writes",

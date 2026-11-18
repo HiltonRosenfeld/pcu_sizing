@@ -281,7 +281,6 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
   - Use `width="stretch"` on `st.dataframe` / `st.data_editor`. `use_container_width` is deprecated (its stated removal date, 2025-12-31, has passed). `width="stretch"` needs a recent Streamlit and crashes old ones (e.g. 1.35: `TypeError: 'str' object cannot be interpreted as an integer`).
   - History: the project was briefly pinned to `streamlit==1.35`, which required `use_container_width=True` and an extra `pyarrow<21` pin (1.35 needs `numpy<2`). Both were dropped when moving to a current version.
   - If the Streamlit version is changed again, re-check `app.py` for API compatibility. Headless check: run it with `streamlit.testing.v1.AppTest` (use an absolute script path and put the project on `PYTHONPATH`), in both input modes, with `manual_df` preset in `session_state` to exercise the results rendering.
-  - `test_app.py` / `test_minimal.py` (Streamlit Cloud diagnostic pages, not pytest suites) were deleted from the working tree (uncommitted) during the pricing change; restore with `git restore` if still wanted — they need updating for the `pricebook` argument and `provider` field.
 - **Optimiser**: **exact search per bucket** (one row per database keeps buckets small enough), with a **heuristic fallback** when a bucket has too many databases for exact search (threshold TBD during implementation).
 - **Phase 1**: Web app with metric import and database→PCU mapping output
 - **Phase 2**: Expand access to the wider IBM team with polished UX
