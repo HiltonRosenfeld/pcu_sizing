@@ -169,107 +169,183 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
     })[MANUAL_COLUMNS]
 
 
-# Settings: five bordered cards side by side, one per setting group
-card_input, card_tps, card_throughput, card_cache, card_grouping = st.columns([1, 1, 1.8, 1.4, 0.9])
+# Custom styling for configuration cards: equal height and compact controls
+st.markdown(
+    """
+    <style>
+    /* Equal height cards and compact layout */
+    [data-testid="stHorizontalBlock"] {
+        align-items: stretch;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        display: flex;
+        flex-direction: column;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlockBorderWrapper"] {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 0.75rem 0.85rem;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlockBorderWrapper"] > div {
+        flex: 1;
+    }
+    /* Compact field labels and spacing */
+    [data-testid="stVerticalBlockBorderWrapper"] label p {
+        font-size: 0.82rem !important;
+        font-weight: 500;
+        margin-bottom: 2px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stNumberInput"] input {
+        font-size: 0.85rem !important;
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        font-size: 0.85rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-with card_input.container(border=True):
-    st.markdown("**Data input**")
-    input_mode = st.radio(
-        "Data input",
-        ["Upload Excel/CSV file", "Enter data on screen"],
-        label_visibility="collapsed",
-    )
+# Build concise summary for collapsed expander title
+mode_summary = st.session_state.get("input_mode", "Upload file")
+tps_summary = st.session_state.get("tps_basis_label", TPS_BASIS_LABELS["p90"])
+workload_summary = WORKLOAD_LABELS.get(st.session_state.get("workload_key", WORKLOAD_DEFAULT), "Catalog")
+if st.session_state.get("workload_key", WORKLOAD_DEFAULT) != WORKLOAD_DEFAULT:
+    lat_s = LATENCY_LABELS.get(st.session_state.get("latency_val", ""), "")
+    ratio_s = RATIO_MODE_LABELS.get(st.session_state.get("ratio_val", ""), "")
+    workload_summary = f"{workload_summary} ({lat_s}, {ratio_s})"
+prod_c_summary = st.session_state.get("prod_cache_pct", 100.0)
+nonprod_c_summary = st.session_state.get("nonprod_cache_pct", 100.0)
+iso_summary = "Isolated prod" if st.session_state.get("use_environment", True) else "Shared prod"
+config_summary = f"{mode_summary} · {tps_summary} TPS · {workload_summary} · Cache {prod_c_summary:.0f}%/{nonprod_c_summary:.0f}% · {iso_summary}"
 
-with card_tps.container(border=True):
-    st.markdown("**TPS basis**")
-    tps_basis_label = st.radio(
-        "TPS basis",
-        [TPS_BASIS_LABELS["p90"], TPS_BASIS_LABELS["max"]],
-        captions=[
-            "tps specified as p90.",
-            "tps specified as max value."
-        ],
-        label_visibility="collapsed",
-    )
-    tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
+# Settings: Four compact configuration sections in a collapsible expander
+with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
+    card_source, card_tps, card_workload, card_capacity = st.columns([1.1, 0.9, 1.8, 1.4])
 
-with card_throughput.container(border=True):
-    st.markdown("**Throughput model**")
-    workload_key = st.selectbox(
-        "Workload type",
-        options=list(WORKLOAD_LABELS.keys()),
-        format_func=lambda k: WORKLOAD_LABELS[k],
-        index=0,
-        help="Select standard catalog limits or measured benchmark limits for KV or IoT workloads.",
-    )
-    if workload_key != WORKLOAD_DEFAULT:
-        col_lat, col_ratio = st.columns(2)
-        latency_val = col_lat.selectbox(
-            "Latency target",
-            options=list(LATENCY_LABELS.keys()),
-            format_func=lambda k: LATENCY_LABELS[k],
+    with card_source.container(border=True):
+        st.markdown("**Data source**")
+        input_mode = st.segmented_control(
+            "Data source",
+            ["Upload file", "Manual entry"],
+            default="Upload file",
+            key="input_mode",
+            label_visibility="collapsed",
+        ) or "Upload file"
+
+        uploaded_file = None
+        if input_mode == "Upload file":
+            uploaded_file = st.file_uploader(
+                "Upload on-demand metrics Excel or CSV file",
+                type=["xlsx", "xls", "csv"],
+                key="uploaded_metrics_file",
+                label_visibility="collapsed",
+                help="Upload an on-demand metrics Excel or CSV file.",
+            )
+        source_status_placeholder = st.empty()
+
+    with card_tps.container(border=True):
+        st.markdown("**TPS basis**")
+        tps_basis_label = st.segmented_control(
+            "TPS basis",
+            [TPS_BASIS_LABELS["p90"], TPS_BASIS_LABELS["max"]],
+            default=TPS_BASIS_LABELS["p90"],
+            key="tps_basis_label",
+            label_visibility="collapsed",
+            help="P90: TPS values represent the 90th percentile.\nMaximum: TPS values represent the peak / P100 value.",
+        ) or TPS_BASIS_LABELS["p90"]
+        tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
+        st.caption(f"Using **{tps_basis_label}** throughput values.")
+
+    with card_workload.container(border=True):
+        st.markdown("**Workload model**")
+        workload_key = st.selectbox(
+            "Workload type",
+            options=list(WORKLOAD_LABELS.keys()),
+            format_func=lambda k: WORKLOAD_LABELS[k],
             index=0,
-            help="Benchmarked latency percentile target.",
+            key="workload_key",
+            help="Select standard catalog limits or measured benchmark limits for KV or IoT workloads.",
         )
-        ratio_val = col_ratio.selectbox(
-            "Read/Write ratio",
-            options=list(RATIO_MODE_LABELS.keys()),
-            format_func=lambda k: RATIO_MODE_LABELS[k],
-            index=0,
-            help="Dynamic ratio brackets (<40% -> 20/80, 40-70% -> 60/40, >70% -> 80/20) or fixed ratio.",
+        if workload_key != WORKLOAD_DEFAULT:
+            col_lat, col_ratio = st.columns(2)
+            latency_val = col_lat.selectbox(
+                "Latency SLA",
+                options=list(LATENCY_LABELS.keys()),
+                format_func=lambda k: LATENCY_LABELS[k],
+                index=0,
+                key="latency_val",
+                help="Benchmarked latency percentile target.",
+            )
+            ratio_val = col_ratio.selectbox(
+                "Read/Write ratio",
+                options=list(RATIO_MODE_LABELS.keys()),
+                format_func=lambda k: RATIO_MODE_LABELS[k],
+                index=0,
+                key="ratio_val",
+                help="Dynamic ratio brackets (<40% -> 20/80, 40-70% -> 60/40, >70% -> 80/20) or fixed ratio.",
+            )
+            throughput_config = ThroughputConfig(
+                workload=workload_key,
+                latency=latency_val,
+                ratio_mode=ratio_val,
+            )
+        else:
+            st.caption("Standard catalog limits (15k/30k/75k TPS).")
+            throughput_config = ThroughputConfig(workload=WORKLOAD_DEFAULT)
+
+    with card_capacity.container(border=True):
+        st.markdown("**Capacity**")
+        cache_col_prod, cache_col_nonprod = st.columns(2)
+        prod_cache_pct = cache_col_prod.number_input(
+            "Prod cache (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=100.0,
+            step=5.0,
+            key="prod_cache_pct",
+            help="Cache needed = data size × this percentage, for production databases.",
         )
-        throughput_config = ThroughputConfig(
-            workload=workload_key,
-            latency=latency_val,
-            ratio_mode=ratio_val,
+        nonprod_cache_pct = cache_col_nonprod.number_input(
+            "Non-prod cache (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=100.0,
+            step=5.0,
+            key="nonprod_cache_pct",
+            help="Cache needed = data size × this percentage, for non-production databases.",
         )
-    else:
-        st.caption("Standard catalog limits (15k/30k/75k TPS read-heavy ceiling).")
-        throughput_config = ThroughputConfig(workload=WORKLOAD_DEFAULT)
+        use_environment = st.toggle(
+            "Isolate production databases",
+            value=True,
+            key="use_environment",
+            help="When on, databases with environment 'prod' or 'production' are placed in their own "
+                 "PCU groups, separate from all other (non-production) databases. When off, the "
+                 "environment is ignored when grouping.",
+        )
 
-with card_cache.container(border=True):
-    st.markdown("**Cache utilisation** (% of data)")
-    cache_col_prod, cache_col_nonprod = st.columns(2)
-    prod_cache_pct = cache_col_prod.number_input(
-        "Production (%)", min_value=0.0, max_value=100.0, value=100.0, step=5.0,
-        help="Cache needed = data size × this percentage, for production databases.",
-    )
-    nonprod_cache_pct = cache_col_nonprod.number_input(
-        "Non-production (%)", min_value=0.0, max_value=100.0, value=100.0, step=5.0,
-        help="Cache needed = data size × this percentage, for non-production databases.",
-    )
-
-with card_grouping.container(border=True):
-    st.markdown("**Grouping**")
-    use_environment = st.toggle(
-        "Isolate production databases",
-        value=True,
-        help="When on, databases with environment 'prod' or 'production' are placed in their own "
-             "PCU groups, separate from all other (non-production) databases. When off, the "
-             "environment is ignored when grouping.",
-    )
-
-if input_mode == "Upload Excel/CSV file":
-    uploaded_file = st.file_uploader(
-        "Upload on-demand metrics Excel or CSV file",
-        type=["xlsx", "xls", "csv"],
-    )
-
+if input_mode == "Upload file":
     if uploaded_file is None:
+        source_status_placeholder.caption("Select a `.xlsx`, `.xls`, or `.csv` file")
         st.info("Upload an Excel or CSV file above to begin.")
         st.stop()
 
     try:
-        file_bytes = uploaded_file.read()
+        file_bytes = uploaded_file.getvalue()
         databases, warnings = load_databases(file_bytes, uploaded_file.name, tps_basis)
+        cache_key = hashlib.md5(file_bytes).hexdigest()
+        source_label = uploaded_file.name
+        source_status_placeholder.caption(f"✓ Loaded **{len(databases)}** database(s)")
     except Exception as exc:
+        source_status_placeholder.error(f"Failed to parse file: {exc}")
         st.error(f"Failed to parse file: {exc}")
         st.stop()
 
-    cache_key = hashlib.md5(file_bytes).hexdigest()
-    source_label = uploaded_file.name
-
 else:
+    source_status_placeholder.caption("On-screen entry active")
     st.caption(
         "Add one row per database (use the empty row at the bottom to add more; "
         "select a row and press Delete to remove it). Data size is the total "
@@ -329,13 +405,12 @@ else:
 
     cache_key = hashlib.md5(manual_df.to_csv().encode()).hexdigest()
     source_label = "on-screen entry"
+    source_status_placeholder.caption(f"✓ Loaded **{len(databases)}** database(s)")
 
 if warnings:
     with st.expander(f"⚠️ {len(warnings)} import warning(s)"):
         for w in warnings:
             st.warning(w)
-
-st.success(f"Loaded **{len(databases)}** database(s) from **{source_label}**.")
 
 # Map each database's provider/region to its geographic pricing region and tier (regions page)
 unmapped = unmapped_locations(pricing, databases)

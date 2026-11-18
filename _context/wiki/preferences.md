@@ -28,3 +28,4 @@
 - Language: **Python**; web framework: **Streamlit**
 - Input data format for on-demand metrics: Excel export (see project.md)
 - Output: on-screen **and** downloadable **Excel** file
+- Python environment: **uv virtual environment** (`.venv`, gitignored) — use `uv` for creating the venv and installing/running (e.g. `uv venv`, `uv pip install -r requirements.txt`, `uv run streamlit run app.py`), not bare `pip`/`python -m venv`
