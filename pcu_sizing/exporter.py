@@ -9,6 +9,12 @@ import io
 
 import pandas as pd
 
+from .benchmarks import (
+    ThroughputConfig,
+    WORKLOAD_LABELS,
+    LATENCY_LABELS,
+    RATIO_MODE_LABELS,
+)
 from .catalog import HOURS_PER_MONTH
 from .engine import PcuGroup, Mapping, VARIANTS
 
@@ -62,7 +68,10 @@ def _summary_row(variant_name: str, groups: list[PcuGroup], baseline_hourly: flo
     }
 
 
-def build_excel(variant_results: dict[str, list[PcuGroup]]) -> bytes:
+def build_excel(
+    variant_results: dict[str, list[PcuGroup]],
+    throughput_config: Optional[ThroughputConfig] = None,
+) -> bytes:
     """
     Build an Excel workbook in memory and return the bytes.
 
@@ -88,6 +97,16 @@ def build_excel(variant_results: dict[str, list[PcuGroup]]) -> bytes:
         summary_df = pd.DataFrame(summary_rows)
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
         _style_sheet(writer, "Summary", summary_df, header_fmt)
+
+        if throughput_config and throughput_config.is_benchmark:
+            ws_summary = writer.sheets["Summary"]
+            meta_start = len(summary_df) + 3
+            ws_summary.write(meta_start, 0, "Throughput Model:", header_fmt)
+            ws_summary.write(meta_start, 1, WORKLOAD_LABELS.get(throughput_config.workload, throughput_config.workload))
+            ws_summary.write(meta_start + 1, 0, "Latency Target:", header_fmt)
+            ws_summary.write(meta_start + 1, 1, LATENCY_LABELS.get(throughput_config.latency, throughput_config.latency))
+            ws_summary.write(meta_start + 2, 0, "Read/Write Ratio:", header_fmt)
+            ws_summary.write(meta_start + 2, 1, RATIO_MODE_LABELS.get(throughput_config.ratio_mode, throughput_config.ratio_mode))
 
         # Per-variant sheets
         for variant_name, groups in variant_results.items():

@@ -114,7 +114,14 @@ Notes:
   - The basis is passed to the cached `load_databases()` and `compute_variants()` so changing it invalidates the caches. Constants `TPS_BASES`, `TPS_BASIS_LABELS` live in `pcu_sizing/importer.py`.
 - **Each Excel row is one database.**
 - `sstable KiB` is already **unreplicated and compressed** — no division by replication factor needed.
-- `read_ratio` (75% threshold) uses the same read and write tps values.
+- `read_ratio` (75% threshold for catalog default) uses the same read and write tps values.
+- **Throughput Model setting** (app card "Throughput model"): allows selecting between the standard catalog limits and empirical benchmark datasets (`data/Astra DB PCU performance benchmarks.md`):
+  - **Workload type**: `Default / Catalog` (default), `Key-Value (KV)`, or `IoT`.
+  - **Latency SLA target** (when benchmark selected): `p99 < 25 ms` (default) or `p99 < 10 ms`.
+  - **Read/Write ratio mode**:
+    - `Dynamic (calculated from TPS)` (default): maps the group's measured read ratio to the nearest benchmark ratio bucket (`< 40%` reads $\to$ 20/80, `40%–70%` reads $\to$ 60/40, `> 70%` reads $\to$ 80/20).
+    - Predetermined fixed ratios: `20% Reads / 80% Writes`, `60% Reads / 40% Writes`, `80% Reads / 20% Writes`.
+  - Throughput limits in benchmark mode are provider-specific (independent limits for AWS, Azure, and GCP) and sized for Small, Medium, and Standard (Large General Purpose / Cache Optimized) PCUs.
 
 ## Mapping Model
 
@@ -140,14 +147,16 @@ For a candidate group of databases `D` with PCU type `t` and PCU count `n`:
 
 ```
 group_read_ratio = Σ reads_tps / Σ (reads_tps + writes_tps)
-tps_per_pcu      = read_heavy_tps[t] if group_read_ratio > 0.75 else write_heavy_tps[t]
+tps_per_pcu      = resolve_tps_ceiling(throughput_config, provider, pcu_type, group_read_ratio)
 
 fits  ⇔  Σ cache_gb  ≤ 0.8 × n × cache_per_pcu[t]
      AND Σ tps       ≤ 0.8 × n × tps_per_pcu
 ```
 
-- **80% utilisation ceiling** applies to both cache and TPS.
-- The TPS ceiling is decided by the **group's** combined read ratio, not each database's.
+- **80% utilisation ceiling** applies to both cache and TPS (or 60% for "Most headroom").
+- When `ThroughputConfig` is Default / Catalog, `tps_per_pcu` is `tps_read_heavy` when `group_read_ratio > 0.75`, else `tps_write_heavy`.
+- When a benchmark workload is chosen, `tps_per_pcu` is looked up from `pcu_sizing/benchmarks.py` using the group's provider (AWS/GCP/Azure), PCU size, latency SLA (`p99 < 25 ms` or `p99 < 10 ms`), and resolved read/write ratio.
+- The TPS ceiling is decided by the **group's** combined read ratio and cloud provider.
 - Minimum `n` for a group/type = `MAX(ROUNDUP(Σcache / (0.8×cache_per_pcu), 0), ROUNDUP(Σtps / (0.8×tps_per_pcu), 0), 1)`.
 
 ### Step 3 — Bucketing (hard constraints)

@@ -19,6 +19,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .benchmarks import ThroughputConfig, get_tps_ceiling
 from .pricing import PriceBook
 from .catalog import (
     CATALOG,
@@ -48,6 +49,7 @@ class PcuGroup:
     flag: str = ""                       # "no headroom" | "needs account team" | "no pricing available" | ""
     rate_per_pcu: Optional[float] = None  # reserved RU per PCU per hour; None = no price published
     storage_rate: Optional[float] = None  # RU per GB stored per month; None = no price published
+    throughput_config: Optional[ThroughputConfig] = None
 
     @property
     def total_cache_gb(self) -> float:
@@ -67,9 +69,14 @@ class PcuGroup:
 
     @property
     def tps_ceiling_per_pcu(self) -> int:
-        if self.group_read_ratio > 0.75:
-            return self.pcu_type.tps_read_heavy
-        return self.pcu_type.tps_write_heavy
+        return get_tps_ceiling(
+            self.throughput_config,
+            self.provider,
+            self.pcu_type.name,
+            self.group_read_ratio,
+            self.pcu_type.tps_read_heavy,
+            self.pcu_type.tps_write_heavy,
+        )
 
     @property
     def cache_utilisation(self) -> float:
@@ -184,7 +191,12 @@ def eligible_types(tenancy: str, is_vector: bool, large_only: bool = False) -> l
 # Minimum feasible PCU count for a group of databases under a given PCU type
 # ---------------------------------------------------------------------------
 
-def min_pcus(databases: list[DbDemand], pcu_type: PcuType, util_ceiling: float) -> int:
+def min_pcus(
+    databases: list[DbDemand],
+    pcu_type: PcuType,
+    util_ceiling: float,
+    throughput_config: Optional[ThroughputConfig] = None,
+) -> int:
     """
     Return minimum PCU count for a group, or None if a single database exceeds
     the hard cap (caller handles that as a flag).
@@ -195,7 +207,15 @@ def min_pcus(databases: list[DbDemand], pcu_type: PcuType, util_ceiling: float) 
     total_reads = sum(db.reads_tps for db in databases)
     total_rw = sum(db.reads_tps + db.writes_tps for db in databases)
     read_ratio = total_reads / total_rw if total_rw > 0 else 1.0
-    tps_per_pcu = pcu_type.tps_read_heavy if read_ratio > 0.75 else pcu_type.tps_write_heavy
+    provider = databases[0].provider if databases else "AWS"
+    tps_per_pcu = get_tps_ceiling(
+        throughput_config,
+        provider,
+        pcu_type.name,
+        read_ratio,
+        pcu_type.tps_read_heavy,
+        pcu_type.tps_write_heavy,
+    )
 
     cache_pcus = math.ceil(total_cache / (util_ceiling * pcu_type.cache_gb))
     tps_pcus = math.ceil(total_tps / (util_ceiling * tps_per_pcu))
@@ -211,6 +231,7 @@ def evaluate_group(
     util_ceiling: float,
     pricebook: PriceBook,
     large_only: bool = False,
+    throughput_config: Optional[ThroughputConfig] = None,
 ) -> Optional[PcuGroup]:
     """
     Try all eligible, priced PCU types and return the cheapest *feasible* PcuGroup.
@@ -246,13 +267,14 @@ def evaluate_group(
     best_infeasible_n = 0
 
     for pcu_type, rate in (rated if unpriced else priced):
-        n = min_pcus(databases, pcu_type, util_ceiling)
+        n = min_pcus(databases, pcu_type, util_ceiling, throughput_config)
 
         if n > limit:
             # Cannot be placed on this type; clamped result is only a fallback
             group = PcuGroup(
                 pcu_type=pcu_type, pcu_count=limit, databases=databases,
                 flag="needs account team", rate_per_pcu=rate, storage_rate=storage_rate,
+                throughput_config=throughput_config,
             )
             if (
                 best_infeasible is None
@@ -267,6 +289,7 @@ def evaluate_group(
         group = PcuGroup(
             pcu_type=pcu_type, pcu_count=n, databases=databases, flag=flag,
             rate_per_pcu=rate, storage_rate=storage_rate,
+            throughput_config=throughput_config,
         )
         if best_feasible is None or group.comparison_cost < best_feasible.comparison_cost:
             best_feasible = group
@@ -313,6 +336,7 @@ def optimise_exact(
     pricebook: PriceBook,
     large_only: bool = False,
     objective: str = "cost",  # "cost" | "fewest_groups"
+    throughput_config: Optional[ThroughputConfig] = None,
 ) -> list[PcuGroup]:
     """
     Enumerate all partitions of databases and return the mapping with the
@@ -325,7 +349,7 @@ def optimise_exact(
         groups = []
         feasible = True
         for subset in partition:
-            g = evaluate_group(subset, util_ceiling, pricebook, large_only)
+            g = evaluate_group(subset, util_ceiling, pricebook, large_only, throughput_config)
             if g is None:
                 feasible = False
                 break
@@ -359,6 +383,7 @@ def optimise_greedy(
     pricebook: PriceBook,
     large_only: bool = False,
     objective: str = "cost",
+    throughput_config: Optional[ThroughputConfig] = None,
 ) -> list[PcuGroup]:
     """
     Greedy first-fit descending heuristic.  Sorts databases by descending demand
@@ -378,7 +403,7 @@ def optimise_greedy(
         for idx, group_dbs in enumerate(groups):
             candidate = group_dbs + [db]
             # Respect PCU target ceiling for grouping
-            g = evaluate_group(candidate, util_ceiling, pricebook, large_only)
+            g = evaluate_group(candidate, util_ceiling, pricebook, large_only, throughput_config)
             if g is None:
                 continue
             # For fewest_groups, any slot that doesn't need account team is fine
@@ -390,7 +415,7 @@ def optimise_greedy(
                     best_slot_cost = g.comparison_cost
             else:
                 # Cost optimisation: pick slot that yields cheapest incremental cost
-                current_g = evaluate_group(group_dbs, util_ceiling, pricebook, large_only)
+                current_g = evaluate_group(group_dbs, util_ceiling, pricebook, large_only, throughput_config)
                 current_cost = current_g.comparison_cost if current_g else 0.0
                 incremental = g.comparison_cost - current_cost
                 if g.flag != "needs account team" and incremental < best_slot_cost:
@@ -404,7 +429,7 @@ def optimise_greedy(
 
     result = []
     for group_dbs in groups:
-        g = evaluate_group(group_dbs, util_ceiling, pricebook, large_only)
+        g = evaluate_group(group_dbs, util_ceiling, pricebook, large_only, throughput_config)
         if g:
             result.append(g)
     return result
@@ -420,14 +445,15 @@ def optimise_bucket(
     util_ceiling: float = UTIL_CEILING,
     large_only: bool = False,
     objective: str = "cost",
+    throughput_config: Optional[ThroughputConfig] = None,
 ) -> list[PcuGroup]:
     if not databases:
         return []
 
     if len(databases) <= EXACT_THRESHOLD:
-        return optimise_exact(databases, util_ceiling, pricebook, large_only, objective)
+        return optimise_exact(databases, util_ceiling, pricebook, large_only, objective, throughput_config)
     else:
-        return optimise_greedy(databases, util_ceiling, pricebook, large_only, objective)
+        return optimise_greedy(databases, util_ceiling, pricebook, large_only, objective, throughput_config)
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +471,7 @@ VARIANTS = [
 def run_all_variants(
     buckets: dict[tuple, list[DbDemand]],
     pricebook: PriceBook,
+    throughput_config: Optional[ThroughputConfig] = None,
 ) -> dict[str, list[PcuGroup]]:
     """
     Run all four variants across all buckets.
@@ -454,6 +481,6 @@ def run_all_variants(
     for variant_name, kwargs in VARIANTS:
         all_groups = []
         for bucket_dbs in buckets.values():
-            all_groups.extend(optimise_bucket(bucket_dbs, pricebook, **kwargs))
+            all_groups.extend(optimise_bucket(bucket_dbs, pricebook, throughput_config=throughput_config, **kwargs))
         results[variant_name] = all_groups
     return results

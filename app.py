@@ -13,6 +13,13 @@ from dataclasses import replace
 import pandas as pd
 import streamlit as st
 
+from pcu_sizing.benchmarks import (
+    ThroughputConfig,
+    WORKLOAD_LABELS,
+    LATENCY_LABELS,
+    RATIO_MODE_LABELS,
+    WORKLOAD_DEFAULT,
+)
 from pcu_sizing.catalog import bucket_databases, HOURS_PER_MONTH
 from pcu_sizing.engine import PcuGroup, run_all_variants, VARIANTS
 from pcu_sizing.importer import (
@@ -77,16 +84,16 @@ treated the same as `tps max` (if both are present, `tps max` is used).
 **PCU group target**: ≤ 5 PCUs (hard cap: 10)
     """)
 
-    st.header("PCU Catalog")
-    catalog_data = [
-        {"Type": "Small",              "Tenancy": "Shared",    "Cache (GB)": 125,   "TPS (RH/WH)": "15k / 6.6k"},
-        {"Type": "Medium",             "Tenancy": "Shared",    "Cache (GB)": 250,   "TPS (RH/WH)": "30k / 13.2k"},
-        {"Type": "Large",              "Tenancy": "Shared",    "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "Large",              "Tenancy": "Dedicated", "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "Cache Optimized",    "Tenancy": "Shared",    "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
-        {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
-    ]
-    st.dataframe(pd.DataFrame(catalog_data), hide_index=True, width="stretch")
+    # st.header("PCU Catalog")
+    # catalog_data = [
+    #     {"Type": "Small",              "Tenancy": "Shared",    "Cache (GB)": 125,   "TPS (RH/WH)": "15k / 6.6k"},
+    #     {"Type": "Medium",             "Tenancy": "Shared",    "Cache (GB)": 250,   "TPS (RH/WH)": "30k / 13.2k"},
+    #     {"Type": "Large",              "Tenancy": "Shared",    "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
+    #     {"Type": "Large",              "Tenancy": "Dedicated", "Cache (GB)": 500,   "TPS (RH/WH)": "75k / 33k"},
+    #     {"Type": "Cache Optimized",    "Tenancy": "Shared",    "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
+    #     {"Type": "Cache Optimized",    "Tenancy": "Dedicated", "Cache (GB)": 2_200, "TPS (RH/WH)": "75k / 33k"},
+    # ]
+    # st.dataframe(pd.DataFrame(catalog_data), hide_index=True, width="stretch")
 
     st.header("Pricing")
     with st.expander("Refresh pricing"):
@@ -162,8 +169,8 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
     })[MANUAL_COLUMNS]
 
 
-# Settings: four bordered cards side by side, one per setting group
-card_input, card_tps, card_cache, card_grouping = st.columns([1, 1, 1.6, 1])
+# Settings: five bordered cards side by side, one per setting group
+card_input, card_tps, card_throughput, card_cache, card_grouping = st.columns([1, 1, 1.8, 1.4, 0.9])
 
 with card_input.container(border=True):
     st.markdown("**Data input**")
@@ -186,8 +193,42 @@ with card_tps.container(border=True):
     )
     tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
 
+with card_throughput.container(border=True):
+    st.markdown("**Throughput model**")
+    workload_key = st.selectbox(
+        "Workload type",
+        options=list(WORKLOAD_LABELS.keys()),
+        format_func=lambda k: WORKLOAD_LABELS[k],
+        index=0,
+        help="Select standard catalog limits or measured benchmark limits for KV or IoT workloads.",
+    )
+    if workload_key != WORKLOAD_DEFAULT:
+        col_lat, col_ratio = st.columns(2)
+        latency_val = col_lat.selectbox(
+            "Latency target",
+            options=list(LATENCY_LABELS.keys()),
+            format_func=lambda k: LATENCY_LABELS[k],
+            index=0,
+            help="Benchmarked latency percentile target.",
+        )
+        ratio_val = col_ratio.selectbox(
+            "Read/Write ratio",
+            options=list(RATIO_MODE_LABELS.keys()),
+            format_func=lambda k: RATIO_MODE_LABELS[k],
+            index=0,
+            help="Dynamic ratio brackets (<40% -> 20/80, 40-70% -> 60/40, >70% -> 80/20) or fixed ratio.",
+        )
+        throughput_config = ThroughputConfig(
+            workload=workload_key,
+            latency=latency_val,
+            ratio_mode=ratio_val,
+        )
+    else:
+        st.caption("Standard catalog limits (15k/30k/75k TPS read-heavy ceiling).")
+        throughput_config = ThroughputConfig(workload=WORKLOAD_DEFAULT)
+
 with card_cache.container(border=True):
-    st.markdown("**Cache utilisation** (% of data held in cache)")
+    st.markdown("**Cache utilisation** (% of data)")
     cache_col_prod, cache_col_nonprod = st.columns(2)
     prod_cache_pct = cache_col_prod.number_input(
         "Production (%)", min_value=0.0, max_value=100.0, value=100.0, step=5.0,
@@ -350,13 +391,16 @@ buckets = bucket_databases(databases, use_environment)
 @st.cache_data(show_spinner="Computing PCU mappings…")
 def compute_variants(
     db_key: str, use_environment: bool, prod_pct: float, nonprod_pct: float, tps_basis: str,
+    workload: str, latency: str, ratio_mode: str,
     pricing_stamp: str,
 ):
-    return run_all_variants(buckets, pricebook)
+    t_config = ThroughputConfig(workload=workload, latency=latency, ratio_mode=ratio_mode)
+    return run_all_variants(buckets, pricebook, throughput_config=t_config)
 
 
 variant_results = compute_variants(
     cache_key, use_environment, prod_cache_pct, nonprod_cache_pct, tps_basis,
+    throughput_config.workload, throughput_config.latency, throughput_config.ratio_mode,
     pricing.get("refreshed_at", ""),
 )
 
@@ -560,7 +604,7 @@ else:
 
 st.subheader("Download results")
 
-excel_bytes = build_excel(variant_results)
+excel_bytes = build_excel(variant_results, throughput_config=throughput_config)
 
 st.download_button(
     label="⬇️ Download Excel report",
