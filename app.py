@@ -178,91 +178,9 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
     })[MANUAL_COLUMNS]
 
 
-# Custom styling for configuration cards: equal height and compact controls
-st.markdown(
-    """
-    <style>
-    /* Equal height cards and compact layout: stretch every wrapper layer between
-       the column and the bordered container (descendant selectors, not strict children) */
-    [data-testid="stHorizontalBlock"] {
-        align-items: stretch !important;
-    }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-        display: flex !important;
-        flex-direction: column !important;
-    }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlockBorderWrapper"] {
-        display: flex !important;
-        flex-direction: column !important;
-        flex: 1 1 auto !important;
-        height: 100% !important;
-    }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlockBorderWrapper"] {
-        padding: 0.75rem 0.85rem;
-    }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlockBorderWrapper"] > div {
-        flex: 1 1 auto !important;
-    }
-    /* Compact field labels and spacing */
-    [data-testid="stVerticalBlockBorderWrapper"] label p {
-        font-size: 0.82rem !important;
-        font-weight: 500;
-        margin-bottom: 2px !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stNumberInput"] input {
-        font-size: 0.85rem !important;
-        padding-top: 2px !important;
-        padding-bottom: 2px !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stSelectbox"] div[data-baseweb="select"] {
-        font-size: 0.85rem !important;
-    }
 
 
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
-st.html("""
-<style>
-/* 1. Force the dropzone section into a single horizontal row */
-[data-testid="stFileUploader"] section {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 12px !important;
-    padding: 10px 16px !important;
-}
-
-/* 2. Put the Browse button first on the left */
-[data-testid="stFileUploader"] section button {
-    order: 1 !important;
-    margin: 0 !important;
-    flex-shrink: 0 !important;
-}
-
-/* 3. Put the instructions container second (to the right of the button) */
-[data-testid="stFileUploaderDropzoneInstructions"],
-[data-testid="stFileUploaderDropzoneInstructions"] * {
-    order: 2 !important;
-    margin: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    min-width: 0 !important;
-    flex: 1 1 auto !important;
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    word-break: normal !important;
-    overflow-wrap: break-word !important;
-}
-
-</style>
-""")
 
 # Build concise summary for expander title, including the loaded source and database count.
 # Computed from session state (before the widgets render) so the header is current on every run.
@@ -649,18 +567,18 @@ for tab, (variant_name, _) in zip(tab_objects, VARIANTS):
             rows.append({
                 "Group": i,
                 "PCU Type": f"{g.pcu_type.name} ({g.pcu_type.tenancy.capitalize()})",
+                "PCUs": g.pcu_count,
                 "Provider": g.provider,
                 "Region": g.databases[0].region,
-                "Pricing region": g.geo_region,
-                "Tier": g.tier,
+                # "Pricing region": g.geo_region,
+                # "Tier": g.tier,
                 "Environment": g.environment_label,
-                "PCUs": g.pcu_count,
-                "Databases": ", ".join(g.db_ids),
+                # "Databases": ", ".join(g.db_ids),
                 "Cache (GB) (used / available)": f"{g.total_cache_gb:.1f} / {g.pcu_count * g.pcu_type.cache_gb:.0f}",
                 "Cache util": g.cache_utilisation,
                 "TPS (used / available)": f"{g.total_tps:,.0f} / {g.pcu_count * g.tps_ceiling_per_pcu:,}",
                 "TPS util": g.tps_utilisation,
-                "RU/hr": g.hourly_cost,
+                # "RU/hr": g.hourly_cost,
                 "RU/mo": g.monthly_cost,
                 "Flag": g.flag,
             })
