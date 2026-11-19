@@ -102,7 +102,7 @@ The on-demand metrics arrive as an Excel sheet. Calculator inputs map to its col
 | Region (for grouping and pricing) | Excel | `region` column — the specific cloud provider region (e.g. `ap-southeast-1`); its geographic pricing region and **pricing tier** come from the regions page (see [Pricing](#pricing)) |
 | Database type (for grouping) | Excel | `engine type` column; value `cassandra-vector` = Serverless (vector), anything else = Serverless (non-vector) |
 | Tenancy | Default | Shared (per-database Dedicated flag) |
-| Environment (for grouping) | Excel/CSV (optional) | `environment` column; `prod` or `production` (case-insensitive) = production, anything else or missing = non-production |
+| Organization ID (for grouping) | Excel/CSV (optional) | `organization id` column (aliases `org_id`, `org id`); required only when isolating by Org ID. The old `environment` column is no longer read (silently ignored); production is derived from the database name |
 
 Notes:
 - **TPS basis setting** (app card "TPS basis", radio: **P90** default / **Maximum**) states what the tps values represent. The selected value is used directly for the TPS calculation — there is no peak multiplier or averaging. (History: originally P90 was hard-wired; before that an `avg × multiplier` / P100 approach.)
@@ -137,7 +137,7 @@ tps        = reads_tps  × ROUNDUP(read_size_kb / 4, 0)
 
 Reads are normalised to 4 KB units, writes to 1 KB units. `reads_tps` / `writes_tps` (renamed from `reads_p90` / `writes_p90`) hold the read/write tps in the selected TPS basis (P90 or max).
 
-**Cache utilisation (`hot_data_pct`)** is set per environment via two number inputs in the app (Production %, Non-production %; default 100%, range 0–100), below the "Isolate production databases" toggle. E.g. 40% means only 40% of a database's data must be cached, so fewer PCUs are needed. The importer still sets `hot_data_pct=1.0`; `app.py` overrides it after parsing with `dataclasses.replace(db, hot_data_pct=…)` (copies, so `st.cache_data` parse results aren't mutated), choosing the value by `db.is_production`. Both percentages are passed to the cached `compute_variants()` so changing them invalidates the cache. Because it is applied in `app.py`, the "Cache needed (GB)" columns in the UI show the reduced value. Environment is classified as in Step 3 (anything other than `prod`/`production` = non-production); this setting applies regardless of the "Isolate production databases" toggle.
+**Cache utilisation (`hot_data_pct`)** is set per environment via two number inputs in the app (Production %, Non-production %; default 100%, range 0–100), above the "Isolate production databases by" selector. E.g. 40% means only 40% of a database's data must be cached, so fewer PCUs are needed. The importer still sets `hot_data_pct=1.0`; `app.py` overrides it after parsing with `dataclasses.replace(db, hot_data_pct=…)` (copies, so `st.cache_data` parse results aren't mutated), choosing the value by `db.is_production`. Both percentages are passed to the cached `compute_variants()` so changing them invalidates the cache. Because it is applied in `app.py`, the "Cache needed (GB)" columns in the UI show the reduced value. Production is classified by database name as in Step 3; this setting applies regardless of the isolation mode.
 
 > Cache-Optimized usable cache is **2,200 GB** (experience), not the 2,500 GB spec. General Purpose 500 GB matches spec.
 
@@ -166,7 +166,11 @@ Databases may only share a group if they match on **all** of:
 1. **Deployment type**: Serverless (vector) vs non-vector (`engine type`) — never mixed.
 2. **Region** (`region` column) — PCU groups are region-specific. The bucket key also includes **provider**, **geographic pricing region** and **tier**, so each group has a single price point.
 3. **Tenancy**: Shared (default) or Dedicated.
-4. **Environment** (optional): production (`prod` / `production`) vs non-production (everything else, including blank) — production databases get their own PCU groups. E.g. a `prod` and a `non-prod` database in region `abc` are in two distinct groups. Controlled by a toggle at the top of the app ("Group production and non-production databases separately", **default ON**). When OFF, environment is ignored for grouping, but Environment columns stay visible; a group mixing both shows `Mixed`. Implemented via `bucket_databases(databases, use_environment)` / `DbDemand.bucket_key(use_environment)`.
+4. **Isolation** — selector "Isolate production databases by" (`ISOLATION_LABELS` in `catalog.py`), three modes:
+   - **DB name** (default, `ISOLATE_BY_NAME`): production when the name contains the whole word `prod` or `production` (split on non-letters, case-insensitive), unless that word directly follows a separate `non` or `pre` word. So `orders_prod`, `db-PROD-1` are production; `non-prod`, `nonprod_db`, `preprod`, `pre_prod`, `product_catalog` are not (see `_is_prod_name()`). Production and non-production never share a group.
+   - **Org ID** (`ISOLATE_BY_ORG`): each org gets its own PCU groups. Org ID is required for every database in this mode only (the run stops and names the databases missing one). Production is still derived from the name (cache % and labels), and prod and non-prod of the same org may share a group, shown as `Mixed`.
+   - **No isolation** (`ISOLATE_NONE`): no extra separation.
+   Implemented via `bucket_databases(databases, isolate_by)` / `DbDemand.bucket_key(isolate_by)`; the cached compute is keyed on the mode. Org ID is not shown in the group tables or Excel export (only in the input preview).
 
 Within a group, **one PCU type only**.
 
@@ -273,7 +277,7 @@ These rules come from [DataStax PCU planning guidance](https://docs.datastax.com
 - **Stack**: **Python** web app built with **Streamlit**. Not Node/React.
 - **Input**: Excel **or CSV** upload of on-demand metrics, **or** optional on-screen entry for small data sets (radio at top of the app switches mode; no sample-data option).
   - File type is chosen by extension in `load_databases()` (`app.py`): `.csv` → `parse_csv()`, otherwise `parse_excel()`. Both feed the shared `_parse_dataframe()` in `pcu_sizing/importer.py`, so CSV needs the same columns and gets the same validation. `parse_csv()` auto-detects the delimiter and tolerates a UTF-8 BOM.
-  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Provider (AWS/GCP/Azure), Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Environment (free text; `prod`/`production` = production), Data size (GB), Write tps, Read tps (entered in the selected TPS basis).
+  - On-screen entry is an editable table (`st.data_editor`, dynamic rows) inside a form with a **Calculate** button. Columns: Database, Provider (AWS/GCP/Azure), Region, Engine (Vector/Non-vector), Tenancy (Shared/Dedicated), Org ID (required only in Org ID isolation mode), Data size (GB), Write tps, Read tps (entered in the selected TPS basis).
   - Parsed by `parse_manual()` in `pcu_sizing/importer.py`, with the same defaults as the Excel import (100% hot data, 4 KB reads, 1 KB writes). Data size is entered directly in **GB** (Excel uses `sstable KiB`). Blank rows are ignored; rows missing data size are skipped with a warning.
 - **Output**: results shown **on screen** (Streamlit tables, one tab per variant) and also available as a **downloadable Excel file** (one sheet per variant plus a summary sheet). Group tables (on screen and Excel) include an `Environment` column (Production / Non-production).
   - In the on-screen group summary table, the `Cache (GB)` and `TPS` columns are headed `... (used / available)` to explain the `used / available` cell format. The Excel report keeps its own headings (`Total Cache (GB)`, `Total TPS`).

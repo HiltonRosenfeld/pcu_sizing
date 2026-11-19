@@ -137,7 +137,7 @@ class PcuGroup:
 
     @property
     def environment_label(self) -> str:
-        """Production / Non-production, or Mixed when environment grouping is off."""
+        """Production / Non-production, or Mixed when the group holds both."""
         labels = {"Production" if db.is_production else "Non-production" for db in self.databases}
         return labels.pop() if len(labels) == 1 else "Mixed"
 

@@ -4,6 +4,7 @@ PCU type catalog and per-database demand calculation.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -109,6 +110,19 @@ HOURS_PER_MONTH = 730        # 24 × 365 / 12
 # Per-database demand calculation  (Step 1)
 # ---------------------------------------------------------------------------
 
+# How production databases are isolated into their own PCU groups
+ISOLATE_BY_NAME = "name"  # production = database name has the word "prod" or "production"
+ISOLATE_BY_ORG = "org"    # each Org ID gets its own PCU groups
+ISOLATE_NONE = "none"     # no isolation: databases share groups regardless of name or org
+ISOLATION_LABELS = {ISOLATE_BY_NAME: "DB name", ISOLATE_BY_ORG: "Org ID", ISOLATE_NONE: "No isolation"}
+
+
+def _is_prod_name(name: str) -> bool:
+    """True when the name has the word "prod" or "production", unless prefixed by "non" or "pre"."""
+    words = re.split(r"[^a-z]+", name.lower())
+    return any(w in ("prod", "production") and (i == 0 or words[i - 1] not in ("non", "pre"))
+               for i, w in enumerate(words))
+
 @dataclass
 class DbDemand:
     db_id: str
@@ -121,7 +135,7 @@ class DbDemand:
     avg_read_kb: float        # default 4
     writes_tps: float         # write tps (P90 or max, per the selected tps basis)
     avg_write_kb: float       # default 1
-    environment: str = ""     # "prod"/"production" = production; anything else = non-production
+    org_id: str = ""          # organization id; required when isolating by Org ID
     provider: str = ""        # cloud provider ("AWS" | "GCP" | "Azure" once resolved)
     geo_region: str = ""      # geographic pricing region ("North America", "EMEA", ...); "" = unknown
     tier: str = ""            # pricing tier of the region ("Standard" | "Premium" | "Premium Plus"); "" = unknown
@@ -132,7 +146,8 @@ class DbDemand:
 
     @property
     def is_production(self) -> bool:
-        return self.environment.strip().lower() in ("prod", "production")
+        """Database name has the word "prod" or "production" (so not "nonprod" or "preprod")."""
+        return _is_prod_name(self.db_id)
 
     @property
     def cache_gb(self) -> float:
@@ -144,14 +159,19 @@ class DbDemand:
         write_units = math.ceil(self.avg_write_kb / 1)
         return self.reads_tps * read_units + self.writes_tps * write_units
 
-    def bucket_key(self, use_environment: bool = True) -> tuple:
+    def bucket_key(self, isolate_by: str = ISOLATE_BY_NAME) -> tuple:
         """Databases sharing a key may share a PCU group.
 
-        When use_environment is False the environment is ignored for grouping.
+        ISOLATE_BY_NAME separates production from non-production; ISOLATE_BY_ORG separates
+        each Org ID; ISOLATE_NONE adds no separation.
         """
         engine = "vector" if self.is_vector else "non-vector"
         key = (self.provider, self.geo_region, self.tier, self.region, engine, self.tenancy)
-        return key + (self.is_production,) if use_environment else key
+        if isolate_by == ISOLATE_BY_ORG:
+            return key + (self.org_id,)
+        if isolate_by == ISOLATE_NONE:
+            return key
+        return key + (self.is_production,)
 
 
 # ---------------------------------------------------------------------------
@@ -159,9 +179,9 @@ class DbDemand:
 # ---------------------------------------------------------------------------
 
 def bucket_databases(
-    databases: list[DbDemand], use_environment: bool = True
+    databases: list[DbDemand], isolate_by: str = ISOLATE_BY_NAME
 ) -> dict[tuple, list[DbDemand]]:
     buckets: dict[tuple, list[DbDemand]] = {}
     for db in databases:
-        buckets.setdefault(db.bucket_key(use_environment), []).append(db)
+        buckets.setdefault(db.bucket_key(isolate_by), []).append(db)
     return buckets

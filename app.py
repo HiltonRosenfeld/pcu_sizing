@@ -20,7 +20,9 @@ from pcu_sizing.benchmarks import (
     RATIO_MODE_LABELS,
     WORKLOAD_DEFAULT,
 )
-from pcu_sizing.catalog import bucket_databases, HOURS_PER_MONTH
+from pcu_sizing.catalog import (
+    bucket_databases, HOURS_PER_MONTH, ISOLATE_BY_NAME, ISOLATE_BY_ORG, ISOLATE_NONE, ISOLATION_LABELS,
+)
 from pcu_sizing.engine import PcuGroup, run_all_variants, VARIANTS
 from pcu_sizing.importer import (
     parse_excel, parse_csv, parse_manual, MANUAL_COLUMNS, TPS_BASIS_LABELS,
@@ -73,9 +75,16 @@ treated the same as `tps max` (if both are present, `tps max` is used).
 
 **Optional columns**
 - `tenancy` — `dedicated` for dedicated tenancy (default: shared)
-- `environment` — `prod` or `production` for production databases; any other value
-  (or blank) is non-production. Production and non-production databases are never
-  placed in the same PCU group.
+- `organization id` — the org each database belongs to. **Required** when isolating by
+  Org ID (each org then gets its own PCU groups).
+
+**Production isolation** (Configuration section)
+- **DB name** — a database is production when its name has the word `prod` or `production`
+  (e.g. `orders_prod`, `production_db`; not `nonprod` or `preprod`). Production and non-production
+  databases are never placed in the same PCU group.
+- **Org ID** — each organization ID gets its own PCU groups. Production and non-production
+  databases of the same org can share a group.
+- **No isolation** — databases share PCU groups regardless of name or org.
 
 ---
 **Utilisation ceilings**  
@@ -162,7 +171,7 @@ def _empty_entry_table(rows: int = 3) -> pd.DataFrame:
         "Region": pd.Series([None] * rows, dtype="object"),
         "Engine": pd.Series([None] * rows, dtype="object"),
         "Tenancy": pd.Series([None] * rows, dtype="object"),
-        "Environment": pd.Series([None] * rows, dtype="object"),
+        "Org ID": pd.Series([None] * rows, dtype="object"),
         "Data size (GB)": pd.Series([None] * rows, dtype="float64"),
         "Write tps": pd.Series([None] * rows, dtype="float64"),
         "Read tps": pd.Series([None] * rows, dtype="float64"),
@@ -286,7 +295,7 @@ if st.session_state.get("workload_key", WORKLOAD_DEFAULT) != WORKLOAD_DEFAULT:
     workload_summary = f"{workload_summary} ({lat_s}, {ratio_s})"
 prod_c_summary = st.session_state.get("prod_cache_pct", 100.0)
 nonprod_c_summary = st.session_state.get("nonprod_cache_pct", 100.0)
-iso_summary = "Isolated prod" if st.session_state.get("use_environment", True) else "Shared prod"
+iso_summary = f"Isolate by {st.session_state.get('isolation_label') or ISOLATION_LABELS[ISOLATE_BY_NAME]}"
 config_summary = f"{mode_summary} · {tps_summary} TPS · {workload_summary} · Cache {prod_c_summary:.0f}%/{nonprod_c_summary:.0f}% · {iso_summary}"
 
 # Settings: Four compact configuration sections in a collapsible expander
@@ -384,14 +393,17 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
             key="nonprod_cache_pct",
             help="Cache needed = data size × this percentage, for non-production databases.",
         )
-        use_environment = st.toggle(
-            "Isolate production databases",
-            value=True,
-            key="use_environment",
-            help="When on, databases with environment 'prod' or 'production' are placed in their own "
-                 "PCU groups, separate from all other (non-production) databases. When off, the "
-                 "environment is ignored when grouping.",
-        )
+        isolation_label = st.segmented_control(
+            "Isolate production databases by",
+            [ISOLATION_LABELS[ISOLATE_BY_NAME], ISOLATION_LABELS[ISOLATE_BY_ORG], ISOLATION_LABELS[ISOLATE_NONE]],
+            default=ISOLATION_LABELS[ISOLATE_BY_NAME],
+            key="isolation_label",
+            help="DB name: databases whose name has the word 'prod' or 'production' get their own PCU "
+                 "groups, separate from all others.\nOrg ID: each organization ID gets its own PCU "
+                 "groups. Every database must have an organization id.\nNo isolation: databases share "
+                 "PCU groups regardless of name or org.",
+        ) or ISOLATION_LABELS[ISOLATE_BY_NAME]
+        isolation_by = next(k for k, v in ISOLATION_LABELS.items() if v == isolation_label)
 
 if input_mode == "Upload file":
     if uploaded_file is None:
@@ -431,9 +443,10 @@ else:
                 "Tenancy": st.column_config.SelectboxColumn(
                     "Tenancy", options=["Shared", "Dedicated"],
                 ),
-                "Environment": st.column_config.TextColumn(
-                    "Environment",
-                    help="'prod' or 'production' = production; anything else = non-production.",
+                "Org ID": st.column_config.TextColumn(
+                    "Org ID",
+                    help="Organization ID. Required when isolating production databases by Org ID.",
+                    required=isolation_by == ISOLATE_BY_ORG,
                 ),
                 "Data size (GB)": st.column_config.NumberColumn(
                     "Data size (GB)", min_value=0.0, format="%.4f",
@@ -509,6 +522,7 @@ with st.expander("📋 Input data preview"):
             "Tier": db.tier,
             "Engine": "Vector" if db.is_vector else "Non-vector",
             "Tenancy": db.tenancy.capitalize(),
+            "Org ID": db.org_id,
             "Environment": "Production" if db.is_production else "Non-production",
             "Data (GB)": round(db.total_data_gb, 4),
             "Cache needed (GB)": round(db.cache_gb, 4),
@@ -523,11 +537,20 @@ with st.expander("📋 Input data preview"):
 # Run optimiser
 # ---------------------------------------------------------------------------
 
-buckets = bucket_databases(databases, use_environment)
+if isolation_by == ISOLATE_BY_ORG:
+    missing_org = [db.db_id for db in databases if not db.org_id]
+    if missing_org:
+        st.error(
+            "Isolating by Org ID requires an organization id for every database. Missing for: "
+            + ", ".join(missing_org)
+        )
+        st.stop()
+
+buckets = bucket_databases(databases, isolation_by)
 
 @st.cache_data(show_spinner="Computing PCU mappings…")
 def compute_variants(
-    db_key: str, use_environment: bool, prod_pct: float, nonprod_pct: float, tps_basis: str,
+    db_key: str, isolation_by: str, prod_pct: float, nonprod_pct: float, tps_basis: str,
     workload: str, latency: str, ratio_mode: str,
     pricing_stamp: str,
 ):
@@ -536,7 +559,7 @@ def compute_variants(
 
 
 variant_results = compute_variants(
-    cache_key, use_environment, prod_cache_pct, nonprod_cache_pct, tps_basis,
+    cache_key, isolation_by, prod_cache_pct, nonprod_cache_pct, tps_basis,
     throughput_config.workload, throughput_config.latency, throughput_config.ratio_mode,
     pricing.get("refreshed_at", ""),
 )
