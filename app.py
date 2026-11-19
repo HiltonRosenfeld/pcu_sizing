@@ -19,6 +19,9 @@ from pcu_sizing.benchmarks import (
     LATENCY_LABELS,
     RATIO_MODE_LABELS,
     WORKLOAD_DEFAULT,
+    WORKLOAD_KV,
+    LATENCY_P99_25MS,
+    RATIO_DYNAMIC,
 )
 from pcu_sizing.catalog import (
     bucket_databases, HOURS_PER_MONTH, ISOLATE_BY_NAME, ISOLATE_BY_ORG, ISOLATE_NONE, ISOLATION_LABELS,
@@ -206,19 +209,19 @@ else:
             mode_summary = f"On-screen entry ({len(_dbs_hdr)} databases)"
         except Exception:
             mode_summary = "On-screen entry (invalid data)"
-workload_summary = WORKLOAD_LABELS.get(st.session_state.get("workload_key", WORKLOAD_DEFAULT), "Catalog")
-if st.session_state.get("workload_key", WORKLOAD_DEFAULT) != WORKLOAD_DEFAULT:
-    lat_s = LATENCY_LABELS.get(st.session_state.get("latency_val", ""), "")
-    ratio_s = RATIO_MODE_LABELS.get(st.session_state.get("ratio_val", ""), "")
+workload_summary = WORKLOAD_LABELS.get(st.session_state.get("workload_key", WORKLOAD_KV), "Catalog")
+if st.session_state.get("workload_key", WORKLOAD_KV) != WORKLOAD_DEFAULT:
+    lat_s = LATENCY_LABELS.get(st.session_state.get("latency_val", LATENCY_P99_25MS), "")
+    ratio_s = RATIO_MODE_LABELS.get(st.session_state.get("ratio_val", RATIO_DYNAMIC), "")
     workload_summary = f"{workload_summary} ({lat_s}, {ratio_s})"
 prod_c_summary = st.session_state.get("prod_cache_pct", 100.0)
 nonprod_c_summary = st.session_state.get("nonprod_cache_pct", 100.0)
-iso_summary = f"Isolate by {st.session_state.get('isolation_label') or ISOLATION_LABELS[ISOLATE_BY_NAME]}"
+iso_summary = f"Isolate by {st.session_state.get('isolation_label') or ISOLATION_LABELS[ISOLATE_BY_ORG]}"
 config_summary = f"{mode_summary} · {tps_summary} TPS · {workload_summary} · Cache {prod_c_summary:.0f}%/{nonprod_c_summary:.0f}% · {iso_summary}"
 
 # Settings: Four compact configuration sections in a collapsible expander
 with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
-    card_source, card_tps, card_workload, card_capacity = st.columns([1.1, 0.9, 1.8, 1.4], border=True)
+    card_source, card_tps, card_workload, card_capacity = st.columns([1.0, 0.9, 1.5, 1.5], border=True)
 
     with card_source.container():
         st.markdown("**Data source**")
@@ -248,7 +251,7 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
             default=TPS_BASIS_LABELS["p90"],
             key="tps_basis_label",
             label_visibility="collapsed",
-            help="P90: TPS values represent the 90th percentile.\nMaximum: TPS values represent the peak / P100 value.",
+            help="P90: Transactions per seconf (TPS) values represent the 90th percentile.  \nMaximum: Transactions per seconf (TPS) values represent the peak / P100 value.",
         ) or TPS_BASIS_LABELS["p90"]
         tps_basis = next(k for k, v in TPS_BASIS_LABELS.items() if v == tps_basis_label)
         st.caption(f"Using **{tps_basis_label}** throughput values.")
@@ -259,9 +262,12 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
             "Workload type",
             options=list(WORKLOAD_LABELS.keys()),
             format_func=lambda k: WORKLOAD_LABELS[k],
-            index=0,
+            index=list(WORKLOAD_LABELS.keys()).index(WORKLOAD_KV),
             key="workload_key",
-            help="Select standard catalog limits or measured benchmark limits for KV or IoT workloads.",
+            help="The type of workload affects the maximum throughput (tps) for a single PCU. Select from:  \n"
+                "**Absolute**: untested, theoretical maximums.  \n"
+                "**Key-Value (KV)**: measured benchmark limits for Key-Value workloads.  \n"
+                "**IoT**: measured benchmark limits for IoT workloads.",
         )
         if workload_key != WORKLOAD_DEFAULT:
             col_lat, col_ratio = st.columns(2)
@@ -279,7 +285,9 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
                 format_func=lambda k: RATIO_MODE_LABELS[k],
                 index=0,
                 key="ratio_val",
-                help="Dynamic ratio brackets (<40% -> 20/80, 40-70% -> 60/40, >70% -> 80/20) or fixed ratio.",
+                help="Ratio of read:write requests.  \n"
+                    "**Dynamic**: based on reads/writes in input data  \n"
+                    "**Fixed**: choose a fixed ratio.",
             )
             throughput_config = ThroughputConfig(
                 workload=workload_key,
@@ -287,7 +295,7 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
                 ratio_mode=ratio_val,
             )
         else:
-            st.caption("Standard catalog limits (15k/30k/75k TPS).")
+            st.caption("Untested, theoretical maximum tps  \nSmall: 15k  Medium: 30k. Large:75k.")
             throughput_config = ThroughputConfig(workload=WORKLOAD_DEFAULT)
 
     with card_capacity.container():
@@ -300,7 +308,7 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
             value=100.0,
             step=5.0,
             key="prod_cache_pct",
-            help="Cache needed = data size × this percentage, for production databases.",
+            help="Percentage of data to cache for production databases",
         )
         nonprod_cache_pct = cache_col_nonprod.number_input(
             "Non-prod cache (%)",
@@ -309,18 +317,17 @@ with st.expander(f"⚙️ Configuration — {config_summary}", expanded=True):
             value=100.0,
             step=5.0,
             key="nonprod_cache_pct",
-            help="Cache needed = data size × this percentage, for non-production databases.",
+            help="Percentage of data to cache for non-prod databases",
         )
         isolation_label = st.segmented_control(
             "Isolate production databases by",
             [ISOLATION_LABELS[ISOLATE_BY_NAME], ISOLATION_LABELS[ISOLATE_BY_ORG], ISOLATION_LABELS[ISOLATE_NONE]],
-            default=ISOLATION_LABELS[ISOLATE_BY_NAME],
+            default=ISOLATION_LABELS[ISOLATE_BY_ORG],
             key="isolation_label",
-            help="DB name: databases whose name has the word 'prod' or 'production' get their own PCU "
-                 "groups, separate from all others.\nOrg ID: each organization ID gets its own PCU "
-                 "groups. Every database must have an organization id.\nNo isolation: databases share "
-                 "PCU groups regardless of name or org.",
-        ) or ISOLATION_LABELS[ISOLATE_BY_NAME]
+            help="**DB name**: databases whose name has the word 'prod' or 'production' get their own PCU groups.  \n"
+                 "**Org ID**: each organization ID gets its own PCU group.  \n"
+                 "**No isolation**: databases share PCU groups regardless of name or org.",
+        ) or ISOLATION_LABELS[ISOLATE_BY_ORG]
         isolation_by = next(k for k, v in ISOLATION_LABELS.items() if v == isolation_label)
 
 if input_mode == "Upload file":

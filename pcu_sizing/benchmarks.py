@@ -16,7 +16,7 @@ WORKLOAD_KV = "kv"
 WORKLOAD_IOT = "iot"
 
 WORKLOAD_LABELS: dict[str, str] = {
-    WORKLOAD_DEFAULT: "Default / Catalog",
+    WORKLOAD_DEFAULT: "Absolute",
     WORKLOAD_KV: "Key-Value (KV)",
     WORKLOAD_IOT: "IoT",
 }
@@ -37,7 +37,7 @@ RATIO_60_40 = "60_40"
 RATIO_80_20 = "80_20"
 
 RATIO_MODE_LABELS: dict[str, str] = {
-    RATIO_DYNAMIC: "Dynamic (from data)",
+    RATIO_DYNAMIC: "Dynamic",
     RATIO_20_80: "20% Reads / 80% Writes",
     RATIO_60_40: "60% Reads / 40% Writes",
     RATIO_80_20: "80% Reads / 20% Writes",
